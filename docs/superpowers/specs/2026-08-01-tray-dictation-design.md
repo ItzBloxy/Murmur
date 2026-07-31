@@ -170,13 +170,19 @@ the wrong project.
 
 | Component | Does | Does not |
 |---|---|---|
-| `LowLevelHotkeySource` | Installs the hook, emits `Tap` / `HoldStart` / `HoldEnd` | Know anything about recording |
+| `LowLevelHotkeySource` | Installs the hook; emits **raw timestamped key-down / key-up** for the bound key | Interpret gestures, or know anything about recording |
+| `GestureRecognizer` | Turns raw key events into `Tap` / `HoldStart` / `HoldEnd` | Touch Win32 |
 | `WasapiAudioCapture` | Produces 16 kHz mono float32 frames | Decide when to start or stop |
 | `SileroVoiceSegmenter` | Emits phrase segments at silences; retains the full buffer | Transcribe |
 | `WhisperEngine` | Transcribes; owns model load/unload/pin | Know about hotkeys or focus |
 | `OverlayWindow` | Displays preview text without taking focus | Contain logic |
 | `Win32TextInjector` | Inserts a string into the foreground window | Decide whether it is safe to do so |
 | `DictationController` | Sequences everything; owns all state | Touch Win32 directly |
+
+Gesture interpretation belongs in `GestureRecognizer`, in Core, precisely because it is the
+fiddliest logic in the app. `IHotkeySource` therefore exposes only raw key transitions with
+timestamps — if it emitted gestures, the tap/hold rules would live in the one project that
+cannot be unit-tested.
 
 ## 6. The dictation flow
 
@@ -185,8 +191,9 @@ the wrong project.
    concurrently.
 2. **While recording** — frames flow to the segmenter. At each silence boundary the phrase
    is transcribed greedily (beam = 1, speed-first) and appended to the overlay.
-3. **Stop** — audio capture ends, the overlay switches to a transcribing indicator, and any
-   in-flight preview pass is awaited.
+3. **Stop** — audio capture ends and the overlay switches to a transcribing indicator. Any
+   in-flight preview pass is cancelled via whisper.cpp's abort callback; if cancellation is
+   unavailable it is awaited instead, which costs up to a second before the final pass.
 4. **Final pass** — the entire buffer is transcribed with beam search (beam = 5) and the
    pinned language, using the same loaded model.
 5. **Insert** — the foreground window is compared against the handle from step 1. If
@@ -198,13 +205,22 @@ the wrong project.
 `GestureRecognizer` is a pure function over timestamped key events, with no Win32
 dependency, so it is directly unit-testable.
 
-| State | Event | Result |
-|---|---|---|
-| Idle | key-down | Start recording; record `t0` |
-| Recording (gesture undetermined) | key-up, `t − t0 < 400ms` | **Tap** — continue recording, enter toggle mode |
-| Recording (gesture undetermined) | key-up, `t − t0 ≥ 400ms` | **Hold** — stop and finalize |
-| Recording (toggle mode) | key-down | Stop immediately and finalize |
-| Any | key-repeat | Ignored |
+Three states — `Idle`, `Undetermined`, `Toggled` — and the table is total, so every event is
+accounted for in every state.
+
+| State | Event | Result | Next state |
+|---|---|---|---|
+| `Idle` | key-down | Start recording; record `t0` | `Undetermined` |
+| `Idle` | key-up | Ignored — this is the trailing release after a toggle-stop | `Idle` |
+| `Undetermined` | key-up, `t − t0 < 400ms` | **Tap** — keep recording | `Toggled` |
+| `Undetermined` | key-up, `t − t0 ≥ 400ms` | **Hold** — stop and finalize | `Idle` |
+| `Toggled` | key-down | Stop immediately and finalize | `Idle` |
+| `Toggled` | key-up | Ignored | `Toggled` |
+| any | key-repeat | Ignored | unchanged |
+
+Stopping on key-*down* in `Toggled` rather than waiting for the release is what makes the
+second tap feel instant. The consequence is a trailing key-up arriving in `Idle`, which is
+why that row exists.
 
 ### Hotkey binding and swallowing
 
@@ -255,12 +271,33 @@ Primary path is clipboard paste: save existing clipboard text, set the transcrip
 whereas synthetic typing of a long transcript is slow and some applications drop characters
 under it.
 
+**Modifier state must be cleared before the paste.** The default binding is Right Ctrl, and
+hold-to-talk keeps it physically down until the moment insertion begins — so a `Ctrl+V`
+sent naively can land with a stale or doubled Ctrl. The injector checks `GetAsyncKeyState`
+for Ctrl, Alt, Shift and Win, synthesizes key-ups for any that are down, sends the paste,
+and does not restore them. The same applies to the typing fallback, where a held Ctrl would
+turn plain characters into shortcuts.
+
 Fallback is per-character `SendInput` with `KEYEVENTF_UNICODE`. It is used when the
 clipboard cannot be opened after retries, and also when the clipboard currently holds an
 image or file list — those cannot be faithfully restored, and silently destroying them
 would be worse than typing slowly.
 
 Text is inserted verbatim. No whitespace is added.
+
+### Model lifecycle and concurrency
+
+whisper.cpp contexts are not thread-safe, so `WhisperEngine` serializes every call through
+a single lock. Preview passes and the final pass never overlap.
+
+Unloading takes that same lock. **Release GPU now** pressed during an active transcription
+does not tear the context out from under it — the unload waits for the current pass to
+complete, then frees. The idle timer only ever fires from the idle state, so it cannot race
+a transcription at all.
+
+**Preload model** sets a pin flag that suspends the idle timer; the model then stays
+resident until **Release GPU now**, which clears the pin and unloads. Ordinary dictation
+neither sets nor clears the pin.
 
 ## 7. Tray menu
 
@@ -279,9 +316,14 @@ Release GPU now      (disabled while unloaded)
 Quit
 ```
 
-The status label reflects the current state (Idle / Recording / Transcribing / Model
-loaded). `Hotkey…` opens a small modal dialog that captures the next key or combination
-pressed, with Escape to cancel.
+The status label carries two independent facts, so it shows both: the dictation state
+(`Idle` / `Recording` / `Transcribing`) and, when the model is resident, a model suffix —
+`Murmur — Idle`, `Murmur — Idle · model loaded`, `Murmur — Idle · model pinned`,
+`Murmur — Recording`. Treating "model loaded" as a fourth dictation state would be wrong;
+the model can be loaded or unloaded in any of them.
+
+`Hotkey…` opens a small modal dialog that captures the next key or combination pressed,
+with Escape to cancel.
 
 Tray icon states: idle (outline microphone), recording (filled microphone), transcribing
 (microphone with activity indicator).
@@ -321,6 +363,12 @@ against it:
 2. Results above a `no_speech_prob` threshold are dropped.
 3. Output is matched against a small blocklist of known Danish and English artifacts.
 
+Layer 2 assumes `Whisper.net` surfaces per-segment no-speech probability from whisper.cpp's
+`whisper_full_get_segment_no_speech_prob`. **Verify this against the pinned Whisper.net
+version as the first implementation step.** If it is not exposed, layers 1 and 3 still hold
+the line — the VAD gate is doing most of the work — but that should be a conscious finding
+rather than a surprise.
+
 | Failure | Response |
 |---|---|
 | Microphone missing or unplugged mid-record | Abort, balloon, return to idle. Never insert a partial transcript |
@@ -332,6 +380,7 @@ against it:
 | Corrupt settings file | Back it up, load defaults, continue. Configuration never blocks startup |
 | Second instance launched | Named mutex; the existing instance balloons, the new one exits |
 | Recording left running | Auto-stop at `maxRecordingMinutes` and finalize, with a balloon |
+| Model download fails or is interrupted | Resume from the partial file on next attempt; balloon with the reason. A truncated file is checksum-rejected and re-fetched rather than loaded |
 
 **First run** downloads `ggml-large-v3-turbo-q8_0.bin` (~870 MB), with progress shown in
 the tray tooltip. The app is usable only after this completes; the hotkey reports "still
@@ -354,9 +403,14 @@ sequencing case is exercised with fakes:
 - Preload pins the model; the idle timer does not unload while pinned
 - Release GPU unloads immediately and clears the pin
 
-Plus `GestureRecognizer` against synthetic timestamped events, `SettingsStore` round-trip /
-corrupt-file / missing-file cases, and `HallucinationFilter` against known artifact strings
-and `no_speech_prob` values.
+Plus, as pure logic with no host required:
+
+- `GestureRecognizer` against synthetic timestamped events, covering **every cell** of the
+  state table above — including the trailing key-up in `Idle` and key-up in `Toggled`
+- The swallow rule: modifier-only bindings pass through, normal keys and combinations are
+  swallowed
+- `SettingsStore` round-trip, corrupt-file and missing-file cases
+- `HallucinationFilter` against known artifact strings and `no_speech_prob` values
 
 ### Integration tests — `Murmur.Integration.Tests`
 
@@ -379,6 +433,8 @@ The Win32 surface cannot be meaningfully asserted on. Run before each release:
 
 - Insertion into Notepad, Chrome's address bar, a web textarea, VS Code, and Slack
 - Insertion into a borderless-windowed game
+- **Hold-to-talk into VS Code**, which is the case most likely to expose a stuck modifier —
+  a leaked Ctrl turns the pasted text into a burst of shortcuts
 - Caret remains in the target textbox while the overlay is displayed
 - Hotkey still responds after 30+ minutes and under heavy CPU load
 - `nvidia-smi` confirms **Release GPU now** actually frees VRAM
