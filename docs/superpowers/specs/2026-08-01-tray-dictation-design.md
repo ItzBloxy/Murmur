@@ -149,7 +149,7 @@ Murmur.sln
 ├── src/Murmur.Platform/        the impure implementations
 │   ├── LowLevelHotkeySource    WH_KEYBOARD_LL hook + watchdog
 │   ├── WasapiAudioCapture      NAudio → 16 kHz mono float32
-│   ├── SileroVoiceSegmenter    ONNX Runtime VAD
+│   ├── SileroVoiceSegmenter    Whisper.net's built-in Silero VAD
 │   ├── WhisperEngine           Whisper.net + model lifecycle
 │   ├── Win32TextInjector       clipboard paste / synthetic typing
 │   └── RunKeyStartupRegistrar  registry Run key
@@ -171,9 +171,14 @@ the wrong project.
 | Component | Does | Does not |
 |---|---|---|
 | `LowLevelHotkeySource` | Installs the hook; emits **raw timestamped key-down / key-up** for the bound key | Interpret gestures, or know anything about recording |
-| `GestureRecognizer` | Turns raw key events into `Tap` / `HoldStart` / `HoldEnd` | Touch Win32 |
+| `GestureRecognizer` | Turns raw key events into `StartRecording` / `StopRecording` commands | Touch Win32 |
 | `WasapiAudioCapture` | Produces 16 kHz mono float32 frames | Decide when to start or stop |
 | `SileroVoiceSegmenter` | Emits phrase segments at silences; retains the full buffer | Transcribe |
+
+Voice activity detection uses Whisper.net's own Silero integration
+(`WhisperVadFactory` / `WhisperVadProcessor`, model fetched via
+`GetGgmlSileroVadModelAsync`) rather than a separate ONNX Runtime dependency. It is the
+same Silero model either way, so this costs nothing and removes a package.
 | `WhisperEngine` | Transcribes; owns model load/unload/pin | Know about hotkeys or focus |
 | `OverlayWindow` | Displays preview text without taking focus | Contain logic |
 | `Win32TextInjector` | Inserts a string into the foreground window | Decide whether it is safe to do so |
@@ -192,8 +197,8 @@ cannot be unit-tested.
 2. **While recording** — frames flow to the segmenter. At each silence boundary the phrase
    is transcribed greedily (beam = 1, speed-first) and appended to the overlay.
 3. **Stop** — audio capture ends and the overlay switches to a transcribing indicator. Any
-   in-flight preview pass is cancelled via whisper.cpp's abort callback; if cancellation is
-   unavailable it is awaited instead, which costs up to a second before the final pass.
+   in-flight preview pass is cancelled through the `CancellationToken` on
+   `WhisperProcessor.ProcessAsync`, so the final pass is not held up behind it.
 4. **Final pass** — the entire buffer is transcribed with beam search (beam = 5) and the
    pinned language, using the same loaded model.
 5. **Insert** — the foreground window is compared against the handle from step 1. If
@@ -363,11 +368,11 @@ against it:
 2. Results above a `no_speech_prob` threshold are dropped.
 3. Output is matched against a small blocklist of known Danish and English artifacts.
 
-Layer 2 assumes `Whisper.net` surfaces per-segment no-speech probability from whisper.cpp's
-`whisper_full_get_segment_no_speech_prob`. **Verify this against the pinned Whisper.net
-version as the first implementation step.** If it is not exposed, layers 1 and 3 still hold
-the line — the VAD gate is doing most of the work — but that should be a conscious finding
-rather than a surprise.
+Layer 2 is confirmed available: `Whisper.net` 1.9.1 exposes
+`SegmentData.NoSpeechProbability`, and the processor builder additionally offers
+`WithNoSpeechThreshold(float)` to reject inside whisper.cpp before a segment is even
+emitted. Both are used — the builder threshold as a coarse gate, the property for the
+explicit check.
 
 | Failure | Response |
 |---|---|
