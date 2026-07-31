@@ -4,7 +4,7 @@
 
 **Goal:** Build a Windows tray application that transcribes speech locally with Whisper and inserts the text into whatever application has focus, driven by a single configurable hotkey that supports both tap-to-toggle and hold-to-talk.
 
-**Architecture:** Three production projects. `Murbur.Core` targets `net10.0` with zero platform dependencies and holds the state machine, gesture recognition, hallucination filtering and settings — this is where nearly all the logic and nearly all the tests live. `Murmur.Platform` targets `net10.0-windows` and holds the impure implementations: the keyboard hook, WASAPI capture, the Whisper engine and the text injector. `Murmur.App` is the WinForms host: tray icon, overlay window and composition root. Core cannot reference Windows-only APIs because its target framework forbids it — the boundary is compiler-enforced, not a convention.
+**Architecture:** Three production projects. `Murmur.Core` targets `net10.0` with zero platform dependencies and holds the state machine, gesture recognition, hallucination filtering and settings — this is where nearly all the logic and nearly all the tests live. `Murmur.Platform` targets `net10.0-windows` and holds the impure implementations: the keyboard hook, WASAPI capture, the Whisper engine and the text injector. `Murmur.App` is the WinForms host: tray icon, overlay window and composition root. Core cannot reference Windows-only APIs because its target framework forbids it — the boundary is compiler-enforced, not a convention.
 
 **Tech Stack:** .NET 10, WinForms (host only), Whisper.net 1.9.1 with `Whisper.net.Runtime.Cuda`, NAudio 2.3.0, xUnit v3.
 
@@ -85,16 +85,20 @@ Create `Directory.Build.props` at the repository root:
 
 Run each command from the repository root:
 
+Every project is created with plain `net10.0`. The templates' `--framework` option only
+accepts bare monikers — passing `net10.0-windows` fails with "not a valid value" — so the
+Windows-specific target frameworks are set in Step 4 instead.
+
 ```bash
 dotnet new classlib -n Murmur.Core -o src/Murmur.Core -f net10.0
 ```
 
 ```bash
-dotnet new classlib -n Murmur.Platform -o src/Murmur.Platform -f net10.0-windows
+dotnet new classlib -n Murmur.Platform -o src/Murmur.Platform -f net10.0
 ```
 
 ```bash
-dotnet new winforms -n Murmur.App -o src/Murmur.App -f net10.0-windows
+dotnet new winforms -n Murmur.App -o src/Murmur.App -f net10.0
 ```
 
 The xUnit v3 templates do not ship with the SDK, so install them first:
@@ -108,7 +112,7 @@ dotnet new xunit3 -n Murmur.Core.Tests -o tests/Murmur.Core.Tests -f net10.0
 ```
 
 ```bash
-dotnet new xunit3 -n Murmur.Integration.Tests -o tests/Murmur.Integration.Tests -f net10.0-windows
+dotnet new xunit3 -n Murmur.Integration.Tests -o tests/Murmur.Integration.Tests -f net10.0
 ```
 
 If the template install fails or `xunit3` is not found, create plain class libraries instead
@@ -121,22 +125,45 @@ dotnet new classlib -n Murmur.Core.Tests -o tests/Murmur.Core.Tests -f net10.0 &
 Delete the placeholder classes the templates generate:
 
 ```bash
-rm -f src/Murmur.Core/Class1.cs src/Murmur.Platform/Class1.cs
+rm -f src/Murmur.Core/Class1.cs src/Murmur.Platform/Class1.cs tests/Murmur.Core.Tests/UnitTest1.cs tests/Murmur.Integration.Tests/UnitTest1.cs tests/Murmur.Core.Tests/Class1.cs tests/Murmur.Integration.Tests/Class1.cs
 ```
 
-- [ ] **Step 4: Create the solution and add projects**
+- [ ] **Step 4: Set the Windows target frameworks**
+
+`Murmur.Platform` and `Murmur.Integration.Tests` need Windows-only APIs. Edit each `.csproj`
+and change the `<TargetFramework>` element:
+
+```xml
+    <TargetFramework>net10.0-windows</TargetFramework>
+```
+
+Apply that to `src/Murmur.Platform/Murmur.Platform.csproj` and
+`tests/Murmur.Integration.Tests/Murmur.Integration.Tests.csproj`.
+
+`Murmur.Platform` also needs WinForms types (`Keys`, `Clipboard`), so add to its
+`<PropertyGroup>`:
+
+```xml
+    <UseWindowsForms>true</UseWindowsForms>
+```
+
+Leave `Murmur.Core` and `Murmur.Core.Tests` on plain `net10.0` — that is what makes the
+"Core has no platform dependencies" boundary compiler-enforced rather than a convention.
+`src/Murmur.App` already targets `net10.0-windows` from the `winforms` template.
+
+- [ ] **Step 5: Create the solution and add projects**
 
 ```bash
 dotnet new sln -n Murmur && dotnet sln add src/Murmur.Core src/Murmur.Platform src/Murmur.App tests/Murmur.Core.Tests tests/Murmur.Integration.Tests
 ```
 
-- [ ] **Step 5: Wire project references**
+- [ ] **Step 6: Wire project references**
 
 ```bash
 dotnet add src/Murmur.Platform reference src/Murmur.Core && dotnet add src/Murmur.App reference src/Murmur.Core src/Murmur.Platform && dotnet add tests/Murmur.Core.Tests reference src/Murmur.Core && dotnet add tests/Murmur.Integration.Tests reference src/Murmur.Core src/Murmur.Platform
 ```
 
-- [ ] **Step 6: Add NuGet packages**
+- [ ] **Step 7: Add NuGet packages**
 
 ```bash
 dotnet add src/Murmur.Platform package Whisper.net --version 1.9.1 && dotnet add src/Murmur.Platform package Whisper.net.Runtime.Cuda --version 1.9.1 && dotnet add src/Murmur.Platform package Whisper.net.Runtime --version 1.9.1 && dotnet add src/Murmur.Platform package NAudio --version 2.3.0
@@ -148,16 +175,19 @@ dotnet add src/Murmur.Platform package Whisper.net --version 1.9.1 && dotnet add
 dotnet add tests/Murmur.Core.Tests package Microsoft.Extensions.TimeProvider.Testing --version 10.8.0
 ```
 
-- [ ] **Step 7: Enable WinForms in Murmur.App only**
+- [ ] **Step 8: Confirm the App project settings**
 
-Confirm `src/Murmur.App/Murmur.App.csproj` contains `<UseWindowsForms>true</UseWindowsForms>` and `<OutputType>WinExe</OutputType>`. The `winforms` template sets both. Add `<ApplicationManifest>` is not needed.
+Check that `src/Murmur.App/Murmur.App.csproj` contains both
+`<UseWindowsForms>true</UseWindowsForms>` and `<OutputType>WinExe</OutputType>`. The
+`winforms` template sets both — `WinExe` is what keeps a console window from appearing
+behind the tray icon. No application manifest is required.
 
-- [ ] **Step 8: Verify the solution builds**
+- [ ] **Step 9: Verify the solution builds**
 
 Run: `dotnet build`
 Expected: `Build succeeded` with 0 errors. Warnings are errors, so any warning fails the build — fix before continuing.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add -A && git commit -m "chore: scaffold Murmur solution with Core/Platform/App projects"
@@ -1360,7 +1390,7 @@ public sealed class DictationControllerTests
         _segmenter.Push(new float[16000]);
         await controller.HandleKeyEventAsync(KeyTransition.Down, 2000);
 
-        Assert.Equal(42, _injector.Injections.Single().ExpectedWindow);
+        Assert.Equal((nint)42, _injector.Injections.Single().ExpectedWindow);
     }
 
     [Fact]
@@ -1498,6 +1528,7 @@ public sealed class DictationControllerTests
         _segmenter.Push(new float[16000]);
 
         _audio.EmitFailure("Device disconnected");
+        await controller.WaitForIdleAsync();
 
         Assert.Equal(DictationState.Idle, controller.State);
         Assert.Empty(_injector.Injections);
@@ -1511,6 +1542,7 @@ public sealed class DictationControllerTests
         await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
         await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
         _audio.EmitFailure("Device disconnected");
+        await controller.WaitForIdleAsync();
 
         await controller.HandleKeyEventAsync(KeyTransition.Down, 5000);
 
@@ -1874,23 +1906,26 @@ public sealed class DictationController : IAsyncDisposable
         await _transition.WaitAsync();
         try
         {
+            // A late max-duration timer can arrive after a normal stop has already run.
+            // Returning here must NOT fall into ReturnToIdle — that would hide the overlay
+            // and restart the idle timer for a session that already ended.
             if (State != DictationState.Recording) return;
-
-            CancelMaxDurationTimer();
-            _audio.Stop();
-            _previewCancellation?.Cancel();
-
-            State = DictationState.Transcribing;
-            _overlay.SetTranscribing();
-            UpdateStatus();
-
-            if (reason.Length > 0) _notifier.Notify("Murmur", reason);
-
-            var buffer = _segmenter.FullBuffer;
-            if (buffer.Length == 0) return;
 
             try
             {
+                CancelMaxDurationTimer();
+                _audio.Stop();
+                _previewCancellation?.Cancel();
+
+                State = DictationState.Transcribing;
+                _overlay.SetTranscribing();
+                UpdateStatus();
+
+                if (reason.Length > 0) _notifier.Notify("Murmur", reason);
+
+                var buffer = _segmenter.FullBuffer;
+                if (buffer.Length == 0) return;
+
                 await _engine.EnsureLoadedAsync();
                 var segments = await _engine.TranscribeAsync(
                     buffer, _settings().Language, TranscriptionQuality.Final, CancellationToken.None);
@@ -1912,10 +1947,13 @@ public sealed class DictationController : IAsyncDisposable
             {
                 _notifier.Notify("Murmur", $"Transcription failed: {ex.Message}");
             }
+            finally
+            {
+                ReturnToIdle();
+            }
         }
         finally
         {
-            ReturnToIdle();
             _transition.Release();
         }
     }
@@ -1923,8 +1961,13 @@ public sealed class DictationController : IAsyncDisposable
     private void ReturnToIdle()
     {
         State = DictationState.Idle;
-        _previewCancellation?.Dispose();
+
+        // Deliberately not disposed here. A preview pass may still be observing this
+        // token, and disposing a CancellationTokenSource out from under an awaiting
+        // WaitAsync throws ObjectDisposedException. It is cheap to let go of and is
+        // disposed properly in DisposeAsync.
         _previewCancellation = null;
+
         _overlay.Hide();
         UpdateStatus();
         StartIdleTimer();
@@ -1937,16 +1980,35 @@ public sealed class DictationController : IAsyncDisposable
 
     private void OnSegmentCompleted(float[] samples) => _background = HandleSegmentAsync(samples);
 
-    private void OnAudioFailed(string message)
-    {
-        if (State != DictationState.Recording) return;
+    private void OnAudioFailed(string message) => _background = AbortRecordingAsync(message);
 
-        CancelMaxDurationTimer();
-        _audio.Stop();
-        _previewCancellation?.Cancel();
-        _gestures.Reset();
-        _notifier.Notify("Murmur", $"Recording aborted: {message}");
-        ReturnToIdle();
+    /// <summary>
+    /// Aborts without transcribing — a half-captured recording must never be inserted.
+    /// Takes the same lock as the normal stop path: this arrives on the audio callback
+    /// thread and would otherwise race a concurrent stop for ownership of the state.
+    /// </summary>
+    private async Task AbortRecordingAsync(string message)
+    {
+        await _transition.WaitAsync();
+        try
+        {
+            if (State != DictationState.Recording) return;
+
+            CancelMaxDurationTimer();
+            _audio.Stop();
+            _previewCancellation?.Cancel();
+
+            // The gesture recognizer still believes recording is latched on. Without this,
+            // the next key press would be read as a stop rather than a fresh start.
+            _gestures.Reset();
+
+            _notifier.Notify("Murmur", $"Recording aborted: {message}");
+            ReturnToIdle();
+        }
+        finally
+        {
+            _transition.Release();
+        }
     }
 
     private void StartIdleTimer()
@@ -2731,6 +2793,21 @@ public sealed class SileroVoiceSegmenterTests : IAsyncLifetime
         Assert.Equal(0, emitted);
     }
 
+    /// <summary>
+    /// The analysis tail is capped at 30s, but that cap must only ever bound preview work.
+    /// The final pass reads FullBuffer, so trimming it would silently truncate the user's
+    /// dictation — the worst possible failure here.
+    /// </summary>
+    [Fact]
+    public void FullBuffer_is_never_trimmed_by_the_tail_cap()
+    {
+        _segmenter.Reset();
+
+        for (var i = 0; i < 8; i++) _segmenter.Push(AudioFixtures.Silence(5));   // 40s, past the cap
+
+        Assert.Equal(AudioFixtures.SampleRate * 40, _segmenter.FullBuffer.Length);
+    }
+
     [Fact]
     public void Speech_followed_by_silence_emits_one_segment()
     {
@@ -2768,8 +2845,9 @@ namespace Murmur.Platform;
 /// complete buffer for the final full-context pass.
 ///
 /// VAD runs over the <em>unconsumed tail</em> only — the audio since the last committed
-/// boundary — rather than the whole recording, so cost stays flat regardless of how long
-/// the user talks.
+/// boundary — rather than the whole recording, and that tail is capped at
+/// <see cref="MaxTailSamples"/>. Detection cost per pass is therefore bounded no matter how
+/// long the user talks or how rarely they pause.
 /// </summary>
 public sealed class SileroVoiceSegmenter : IVoiceSegmenter, IDisposable
 {
@@ -2777,6 +2855,14 @@ public sealed class SileroVoiceSegmenter : IVoiceSegmenter, IDisposable
 
     /// <summary>Run detection at most this often, to avoid burning CPU on every 100ms frame.</summary>
     private const int AnalyzeEverySamples = SampleRate / 2;
+
+    /// <summary>
+    /// Hard cap on how much audio a single detection pass examines. Without it, continuous
+    /// speech with no qualifying pause grows the tail without bound and every pass re-scans
+    /// the whole thing. Preview is best-effort, so dropping the excess is acceptable — the
+    /// final pass reads <see cref="FullBuffer"/>, which is never trimmed.
+    /// </summary>
+    private const int MaxTailSamples = SampleRate * 30;
 
     private readonly WhisperVadFactory _factory;
     private readonly WhisperVadProcessor _processor;
@@ -2791,7 +2877,14 @@ public sealed class SileroVoiceSegmenter : IVoiceSegmenter, IDisposable
     {
         _silenceMs = silenceMs;
         _factory = WhisperVadFactory.FromPath(vadModelPath);
-        _processor = _factory.CreateBuilder().Build();
+
+        _processor = _factory.CreateBuilder()
+            // Silero is tiny and runs on this CPU in well under a millisecond per second of
+            // audio. Keeping it off the GPU leaves all the VRAM for Whisper.
+            .WithUseGpu(false)
+            .WithMinSilenceDuration(TimeSpan.FromMilliseconds(silenceMs))
+            .WithMinSpeechDuration(TimeSpan.FromMilliseconds(200))
+            .Build();
     }
 
     public event Action<float[]>? SegmentCompleted;
@@ -2839,6 +2932,14 @@ public sealed class SileroVoiceSegmenter : IVoiceSegmenter, IDisposable
         var tailLength = _all.Count - _consumed;
         if (tailLength <= 0) return null;
 
+        // Continuous speech with no qualifying pause, or a long uninterrupted silence,
+        // would otherwise grow the tail forever and re-scan all of it every pass.
+        if (tailLength > MaxTailSamples)
+        {
+            _consumed += tailLength - MaxTailSamples;
+            tailLength = MaxTailSamples;
+        }
+
         var tail = new float[tailLength];
         _all.CopyTo(_consumed, tail, 0, tailLength);
 
@@ -2873,7 +2974,7 @@ public sealed class SileroVoiceSegmenter : IVoiceSegmenter, IDisposable
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `dotnet test tests/Murmur.Integration.Tests --filter SileroVoiceSegmenterTests`
-Expected: PASS — 3 passed, 1 skipped until fixtures exist.
+Expected: PASS — 4 passed, 1 skipped until fixtures exist.
 
 - [ ] **Step 5: Commit**
 
