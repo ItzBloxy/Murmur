@@ -15,6 +15,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <Version>1.0.0</Version>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>

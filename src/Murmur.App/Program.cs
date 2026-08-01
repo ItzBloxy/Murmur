@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Windows.Forms;
 using Murmur.Core;
 using Murmur.Core.Abstractions;
@@ -65,6 +66,7 @@ internal sealed class MurmurContext : ApplicationContext
 
         _log.WriteSessionHeader(
         [
+            ("version", typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown"),
             ("executable", Application.ExecutablePath),
             ("data directory", _dataDirectory),
             ("hotkey", _settings.Hotkey),
