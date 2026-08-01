@@ -313,9 +313,21 @@ The only hard requirement of the whole plan. Two independent pieces carry CUDA a
 one is not enough.
 
 **Files:**
+- Modify: `.gitignore`
 - Modify: `src/Murmur.App/Murmur.App.csproj`
 
-- [ ] **Step 1: Condition the native CUDA copy on a normal build**
+- [ ] **Step 1: Keep publish output out of git — do this before the first publish**
+
+This task publishes at Step 5 and commits at Step 7 with `git add -A`. Without the ignore
+in place first, that commit would drag roughly 270 MB of build output into history.
+
+In `.gitignore`, add below the existing `artifacts/` line:
+
+```gitignore
+dist/
+```
+
+- [ ] **Step 2: Condition the native CUDA copy on a normal build**
 
 In `src/Murmur.App/Murmur.App.csproj`, replace the existing `native/cuda12` ItemGroup:
 
@@ -331,7 +343,7 @@ In `src/Murmur.App/Murmur.App.csproj`, replace the existing `native/cuda12` Item
   </ItemGroup>
 ```
 
-- [ ] **Step 2: Add the post-publish strip target**
+- [ ] **Step 3: Add the post-publish strip target**
 
 In the same file, before the closing `</Project>`:
 
@@ -359,7 +371,7 @@ In the same file, before the closing `</Project>`:
   </Target>
 ```
 
-- [ ] **Step 3: Verify a normal build still bundles CUDA**
+- [ ] **Step 4: Verify a normal build still bundles CUDA**
 
 Run: `dotnet build`
 Expected: `Build succeeded`. Then confirm the development build is unchanged:
@@ -370,7 +382,7 @@ ls src/Murmur.App/bin/Debug/net10.0-windows/cublasLt64_12.dll
 
 Expected: the file exists. The development machine keeps its CUDA backend.
 
-- [ ] **Step 4: Verify a portable publish removes it**
+- [ ] **Step 5: Verify a portable publish removes it**
 
 ```bash
 dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Portable=true -o dist/Murmur
@@ -379,7 +391,7 @@ dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Por
 Expected: build succeeds and prints
 `Portable build: removed the CUDA 12 backend, leaving Vulkan and CPU.`
 
-- [ ] **Step 5: Assert every CUDA artifact is gone**
+- [ ] **Step 6: Assert every CUDA artifact is gone**
 
 ```bash
 ls dist/Murmur/cublasLt64_12.dll dist/Murmur/cublas64_12.dll dist/Murmur/cudart64_12.dll dist/Murmur/runtimes/cuda12 2>&1
@@ -388,7 +400,13 @@ ls dist/Murmur/cublasLt64_12.dll dist/Murmur/cublas64_12.dll dist/Murmur/cudart6
 Expected: every one reports "No such file or directory". If any survives, the strip target
 did not match and the zip would carry 1.8 GB of unusable CUDA.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
+
+Confirm `dist/` is not staged before committing — if it appears, Step 1 was skipped:
+
+```bash
+git status --short | grep dist || echo "dist/ correctly ignored"
+```
 
 ```bash
 git add -A && git commit -m "build: add a Portable property that strips CUDA from published output"
@@ -539,13 +557,28 @@ dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Por
 
 Expected: `dist/Murmur/README.txt` exists.
 
-- [ ] **Step 4: Verify it does NOT land in a normal build**
+- [ ] **Step 4: Verify the condition actually gates it**
+
+Checking a plain `dotnet build` would prove nothing here: `CopyToPublishDirectory` only acts
+during publish, so the README would be absent whether the condition works or not. The
+meaningful test is a **non-portable publish**, which also confirms the CUDA condition from
+Task 3 behaves in the opposite direction:
 
 ```bash
-dotnet build && ls src/Murmur.App/bin/Debug/net10.0-windows/README.txt 2>&1
+dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -o dist/_nonportable
 ```
 
-Expected: "No such file or directory". The README is packaging, not part of the app.
+```bash
+ls dist/_nonportable/README.txt 2>&1; ls dist/_nonportable/cublasLt64_12.dll
+```
+
+Expected: `README.txt` reports "No such file or directory", and `cublasLt64_12.dll` exists.
+Together those show `Portable` genuinely drives both conditions rather than one of them
+happening to be inert.
+
+```bash
+rm -rf dist/_nonportable
+```
 
 - [ ] **Step 5: Commit**
 
@@ -557,18 +590,9 @@ git add -A && git commit -m "docs: add the README that ships inside the portable
 
 ## Task 5: Produce the zip and record real sizes
 
-**Files:**
-- Modify: `.gitignore`
+**Files:** none — `dist/` was already gitignored in Task 3 Step 1.
 
-- [ ] **Step 1: Keep build output out of git**
-
-In `.gitignore`, add below the existing `artifacts/` line:
-
-```gitignore
-dist/
-```
-
-- [ ] **Step 2: Build the portable output from clean**
+- [ ] **Step 1: Build the portable output from clean**
 
 ```bash
 rm -rf dist && dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Portable=true -o dist/Murmur
@@ -576,7 +600,7 @@ rm -rf dist && dotnet publish src/Murmur.App -c Release -r win-x64 --self-contai
 
 Expected: `Portable build: removed the CUDA 12 backend, leaving Vulkan and CPU.`
 
-- [ ] **Step 3: Measure the folder**
+- [ ] **Step 2: Measure the folder**
 
 ```bash
 du -sm dist/Murmur && du -sm dist/Murmur/runtimes/*
@@ -586,13 +610,15 @@ Expected: the folder is in the region of 270 MB, with `runtimes/vulkan` around 1
 no `runtimes/cuda12`. Record the real numbers — the spec's figures are estimates and
 section 5 of the spec says they are to be replaced by measurement.
 
-- [ ] **Step 4: Create the zip**
+- [ ] **Step 3: Create the zip**
 
-```bash
-powershell -Command "Compress-Archive -Path dist/Murmur/* -DestinationPath dist/Murmur-portable.zip -Force"
+Run in PowerShell:
+
+```powershell
+Compress-Archive -Path "D:\whisper\dist\Murmur\*" -DestinationPath "D:\whisper\dist\Murmur-portable.zip" -Force
 ```
 
-- [ ] **Step 5: Measure the zip**
+- [ ] **Step 4: Measure the zip**
 
 ```bash
 du -sm dist/Murmur-portable.zip
@@ -600,14 +626,14 @@ du -sm dist/Murmur-portable.zip
 
 Expected: roughly 150 MB. Record the real figure.
 
-- [ ] **Step 6: Update the spec with measured sizes**
+- [ ] **Step 5: Update the spec with measured sizes**
 
 In `docs/superpowers/specs/2026-08-01-portable-distribution-design.md`, replace the
 "Expected contents" table's estimate column with the measured values, and change the
 sentence below it from "These are projections from measured package sizes" to a statement
 of what was measured, on which date.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "build: document the portable zip command and measured sizes"
@@ -653,7 +679,7 @@ Copy the folder somewhere unrelated and run it from there. In PowerShell:
 
 ```powershell
 Get-Process -Name 'Murmur.App' -ErrorAction SilentlyContinue | Stop-Process -Force
-Copy-Item -Recurse -Force "D:\whisper\dist\Murmur" "C:\murmur-portable-check"
+Copy-Item -Recurse -Force "D:\whisper\dist\Murmur" "$env:USERPROFILE\murmur-portable-check"
 Start-Process "C:\murmur-portable-check\Murmur.App.exe"
 ```
 
@@ -680,7 +706,7 @@ Expected: every one reports "No such file or directory".
 
 ```powershell
 Get-Process -Name 'Murmur.App' -ErrorAction SilentlyContinue | Stop-Process -Force
-Remove-Item -Recurse -Force "C:\murmur-portable-check"
+Remove-Item -Recurse -Force "$env:USERPROFILE\murmur-portable-check"
 ```
 
 - [ ] **Step 7: Record the results**
