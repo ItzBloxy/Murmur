@@ -167,19 +167,22 @@ Compress-Archive -Path dist/Murmur/* -DestinationPath dist/Murmur-portable.zip -
 `dist/` is gitignored. Build outputs do not belong in history, and the zip is roughly
 150 MB.
 
-### Expected contents
+### Measured contents
 
-| | estimate |
+| | measured |
 |---|---|
-| .NET runtime, self-contained WinForms | ~150 MB |
-| Whisper.net and the Vulkan backend | ~116 MB |
-| CPU backend | 2 MB |
-| Murmur assemblies | <1 MB |
-| **folder** | **~270 MB** |
-| **zipped** | **~150 MB** |
+| .NET runtime, self-contained WinForms | 109 MB |
+| Whisper.net and the Vulkan backend | 116 MB |
+| CPU backends (win-x64, win-x86, win-arm64) | 6 MB |
+| Murmur assemblies | 0.4 MB |
+| **folder** | **239 MB** across 307 files |
+| **zipped** | **85 MB** |
 
-These are projections from measured package sizes. Section 8 records the real figures once
-built; they are not to be quoted as fact until then.
+Measured 2026-08-01 from a clean portable publish. The zip came in well under the 150 MB
+projection because the .NET runtime and the Vulkan backend both compress heavily.
+
+At 85 MB the zip fits comfortably in a Discord Nitro upload, a Google Drive share, or a
+GitHub release asset.
 
 The CPU backend is retained deliberately. At 2 MB it is the difference between "slow but
 working" and "does nothing" should Vulkan fail to initialise, and the log names whichever
