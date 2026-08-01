@@ -234,16 +234,30 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
         return true;
     }
 
+    // Every synthesized event carries the signature so our own hook discards it. Omitting it
+    // makes the app retrigger its own hotkey the instant it inserts text.
     private static INPUT KeyInput(ushort virtualKey, uint flags) => new()
     {
         type = INPUT_KEYBOARD,
-        union = new INPUTUNION { ki = new KEYBDINPUT { wVk = virtualKey, dwFlags = flags } },
+        union = new INPUTUNION
+        {
+            ki = new KEYBDINPUT { wVk = virtualKey, dwFlags = flags, dwExtraInfo = SyntheticInput.Signature },
+        },
     };
 
     private static INPUT UnicodeInput(char character, uint flags) => new()
     {
         type = INPUT_KEYBOARD,
-        union = new INPUTUNION { ki = new KEYBDINPUT { wVk = 0, wScan = character, dwFlags = flags } },
+        union = new INPUTUNION
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = 0,
+                wScan = character,
+                dwFlags = flags,
+                dwExtraInfo = SyntheticInput.Signature,
+            },
+        },
     };
 
     /// <summary>

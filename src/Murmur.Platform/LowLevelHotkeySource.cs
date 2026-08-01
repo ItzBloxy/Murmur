@@ -153,6 +153,14 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
         if (code != HC_ACTION) return CallNextHookEx(_hookHandle, code, wParam, lParam);
 
         var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+
+        // Our own injected keystrokes. Treating them as real input desynchronizes the
+        // held-key tracking below and makes dictation restart itself after every insertion.
+        if (data.dwExtraInfo == SyntheticInput.Signature)
+        {
+            return CallNextHookEx(_hookHandle, code, wParam, lParam);
+        }
+
         var key = (Keys)data.vkCode;
 
         if (!HotkeySwallowRule.Matches(_boundKey, key))
