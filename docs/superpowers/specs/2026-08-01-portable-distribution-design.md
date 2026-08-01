@@ -248,6 +248,26 @@ Executed, not merely listed. No second machine is required for the first five.
    inserted.
 6. **Size.** Record the actual folder and zip sizes, replacing the estimates in section 5.
 
+### Results, 2026-08-01
+
+All six checks executed against a clean portable publish.
+
+| check | result |
+|---|---|
+| Backend actually loaded | `backend=Vulkan (requested gpu)` |
+| Runs outside the repository | ran from `%USERPROFILE%\murmur-portable-check` |
+| CUDA artifacts absent | all four gone |
+| Self-contained | `coreclr.dll`, `hostfxr.dll`, `hostpolicy.dll` present |
+| End to end | 49.80s of speech transcribed in 1.09s, `result: Injected` |
+| Size | 239 MB folder across 307 files, 85 MB zipped |
+
+The real-time factor of 0.022 confirms the GPU path. The same recording spans two 30-second
+windows, so on the CPU backend it would have taken roughly 20 seconds.
+
+The `Portable` property was also checked in the negative direction: a non-portable publish
+keeps `cublasLt64_12.dll` and omits `README.txt`, so the property genuinely drives both
+conditions rather than one of them being inert.
+
 ### What cannot be verified here
 
 - **The friend's specific GTX card.** The claim rests on NVIDIA supporting Vulkan since
