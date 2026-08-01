@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows.Forms;
 using Murmur.Core;
 using Murmur.Core.Abstractions;
@@ -34,13 +35,14 @@ internal sealed class MurmurContext : ApplicationContext
     private readonly string _dataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Murmur");
 
+    private readonly FileDiagnosticLog _log;
     private readonly SettingsStore _settingsStore;
     private readonly TrayShell _tray = new();
     private readonly OverlayWindow _overlay = new();
     private readonly WhisperEngine _engine;
-    private readonly WasapiAudioCapture _audio = new();
-    private readonly LowLevelHotkeySource _hotkeys = new();
-    private readonly Win32TextInjector _injector = new();
+    private readonly WasapiAudioCapture _audio;
+    private readonly LowLevelHotkeySource _hotkeys;
+    private readonly Win32TextInjector _injector;
     private readonly RunKeyStartupRegistrar _startup = new();
     private readonly System.Windows.Forms.Timer _startupTimer = new() { Interval = 1 };
 
@@ -53,8 +55,28 @@ internal sealed class MurmurContext : ApplicationContext
 
     public MurmurContext()
     {
+        _log = new FileDiagnosticLog(Path.Combine(_dataDirectory, "murmur.log"));
         _settingsStore = new SettingsStore(Path.Combine(_dataDirectory, "settings.json"));
         _settings = _settingsStore.Load();
+
+        _audio = new WasapiAudioCapture(_log);
+        _hotkeys = new LowLevelHotkeySource(_log);
+        _injector = new Win32TextInjector(_log);
+
+        _log.WriteSessionHeader(
+        [
+            ("executable", Application.ExecutablePath),
+            ("data directory", _dataDirectory),
+            ("hotkey", _settings.Hotkey),
+            ("language", _settings.Language),
+            ("device", _settings.Device),
+            ("hold threshold", $"{_settings.HoldThresholdMs} ms"),
+            ("vad silence", $"{_settings.VadSilenceMs} ms"),
+            ("idle unload", $"{_settings.IdleUnloadMinutes} min"),
+            ("start with windows", _settings.StartWithWindows.ToString()),
+        ]);
+
+        _audio.LogDeviceInventory();
 
         var store = new ModelStore(Path.Combine(_dataDirectory, "models"));
         _engine = new WhisperEngine(store, _settings.Device);
@@ -98,14 +120,17 @@ internal sealed class MurmurContext : ApplicationContext
 
             _segmenter = new SileroVoiceSegmenter(_engine.VadModelPath, _settings.VadSilenceMs);
             _controller = new DictationController(
-                _audio, _segmenter, _engine, _injector, _overlay, _tray, () => _settings, TimeProvider.System);
+                _audio, _segmenter, _engine, _injector, _overlay, _tray, () => _settings,
+                TimeProvider.System, _log);
 
             _modelsReady = true;
+            _log.Write("startup", $"models ready — whisper and VAD loaded from {Path.Combine(_dataDirectory, "models")}");
             _tray.SetState(DictationState.Idle, _engine.IsLoaded, _engine.IsPinned);
             _tray.Notify("Murmur", $"Ready. Press {_settings.Hotkey} to dictate.");
         }
         catch (Exception ex)
         {
+            _log.Write("error", $"startup failed: {ex}");
             _tray.Notify("Murmur", $"Model download failed: {ex.Message}. Restart Murmur to retry.");
         }
     }
@@ -135,7 +160,27 @@ internal sealed class MurmurContext : ApplicationContext
         // wired once here and null-guarded rather than subscribed later.
         _tray.PreloadRequested += () => { if (_controller is { } c) _ = c.PreloadAsync(); };
         _tray.ReleaseGpuRequested += () => { if (_controller is { } c) _ = c.ReleaseGpuAsync(); };
-        _tray.QuitRequested += ExitThread;
+
+        _tray.OpenLogRequested += () =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{_log.Path}\"")
+                {
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                _tray.Notify("Murmur", $"Could not open the log folder: {ex.Message}");
+            }
+        };
+
+        _tray.QuitRequested += () =>
+        {
+            _log.Write("startup", "quit requested from the tray menu");
+            ExitThread();
+        };
     }
 
     private void WireHotkeys()

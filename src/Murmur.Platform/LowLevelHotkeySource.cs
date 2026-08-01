@@ -26,6 +26,7 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
 
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly LowLevelKeyboardProc _callback;
+    private readonly IDiagnosticLog _log;
 
     /// <summary>
     /// Everything the hotkey triggers runs here, never on the hook thread. See
@@ -41,10 +42,18 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
     private volatile bool _failureReported;
     private Keys _boundKey = HotkeySwallowRule.Default;
 
-    public LowLevelHotkeySource()
+    public LowLevelHotkeySource(IDiagnosticLog? log = null)
     {
+        _log = log ?? NullDiagnosticLog.Instance;
         _callback = HookCallback;
-        _pump.KeyEvent += (transition, timestamp) => KeyEvent?.Invoke(transition, timestamp);
+
+        _pump.KeyEvent += (transition, timestamp) =>
+        {
+            // Logged here rather than in the callback: this runs on the pump's worker, so
+            // the hook callback itself stays free of file I/O.
+            _log.Write("hotkey", $"{transition} at {timestamp}ms  focus: {WindowInfo.DescribeForeground()}");
+            KeyEvent?.Invoke(transition, timestamp);
+        };
     }
 
     public event Action<KeyTransition, long>? KeyEvent;

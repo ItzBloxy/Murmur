@@ -26,6 +26,7 @@ public sealed class TrayShell : INotifier, IDisposable
     private readonly ToolStripMenuItem _startWithWindows = new("Start with Windows") { CheckOnClick = true };
     private readonly ToolStripMenuItem _preload = new("Preload model");
     private readonly ToolStripMenuItem _release = new("Release GPU now");
+    private readonly ToolStripMenuItem _openLog = new("Open diagnostic log");
 
     public TrayShell()
     {
@@ -48,6 +49,8 @@ public sealed class TrayShell : INotifier, IDisposable
             _preload,
             _release,
             new ToolStripSeparator(),
+            _openLog,
+            new ToolStripSeparator(),
             new ToolStripMenuItem("Quit", null, (_, _) => QuitRequested?.Invoke()),
         ]);
 
@@ -57,6 +60,7 @@ public sealed class TrayShell : INotifier, IDisposable
         _startWithWindows.Click += (_, _) => StartWithWindowsToggled?.Invoke(_startWithWindows.Checked);
         _preload.Click += (_, _) => PreloadRequested?.Invoke();
         _release.Click += (_, _) => ReleaseGpuRequested?.Invoke();
+        _openLog.Click += (_, _) => OpenLogRequested?.Invoke();
 
         _icon.Icon = TrayIcons.Idle;
         _icon.Text = "Murmur";
@@ -69,6 +73,7 @@ public sealed class TrayShell : INotifier, IDisposable
     public event Action<bool>? StartWithWindowsToggled;
     public event Action? PreloadRequested;
     public event Action? ReleaseGpuRequested;
+    public event Action? OpenLogRequested;
     public event Action? QuitRequested;
 
     public void ApplySettings(Settings settings)

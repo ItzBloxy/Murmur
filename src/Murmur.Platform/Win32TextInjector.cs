@@ -13,8 +13,10 @@ namespace Murmur.Platform;
 /// pasting: hold-to-talk on the default Right Ctrl binding keeps that key down until
 /// insertion begins, and a Ctrl+V sent on top of it lands corrupted.
 /// </summary>
-public sealed partial class Win32TextInjector : ITextInjector
+public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITextInjector
 {
+    private readonly IDiagnosticLog _log = log ?? NullDiagnosticLog.Instance;
+
     private const int INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_UNICODE = 0x0004;
@@ -53,23 +55,56 @@ public sealed partial class Win32TextInjector : ITextInjector
         return result;
     }
 
-    private static InjectionResult InjectCore(string text, nint expectedWindow)
+    private InjectionResult InjectCore(string text, nint expectedWindow)
     {
-        if (GetForegroundWindowNative() != expectedWindow)
+        var actual = GetForegroundWindowNative();
+        _log.Write("inject", $"expected {WindowInfo.Describe(expectedWindow)}");
+        _log.Write("inject", $"actual   {WindowInfo.Describe(actual)}");
+
+        if (actual != expectedWindow)
         {
+            _log.Write("inject", "focus moved during dictation — copying to clipboard instead of typing");
             TrySetClipboardText(text);
             return InjectionResult.CopiedToClipboardFocusChanged;
         }
 
+        var held = DescribeHeldModifiers();
+        if (held.Length > 0) _log.Write("inject", $"releasing held modifiers: {held}");
         ReleaseHeldModifiers();
 
         // A clipboard holding an image or files cannot be faithfully restored, so type
         // instead rather than silently destroying it.
         var clipboardIsRestorable = ClipboardHoldsOnlyText(out var savedText);
+        _log.Write("inject", $"clipboard restorable: {clipboardIsRestorable}");
 
-        if (clipboardIsRestorable && TryPaste(text, savedText)) return InjectionResult.Injected;
+        if (clipboardIsRestorable && TryPaste(text, savedText))
+        {
+            _log.Write("inject", "inserted via clipboard paste");
+            return InjectionResult.Injected;
+        }
 
-        return TypeUnicode(text) ? InjectionResult.Injected : InjectionResult.Failed;
+        _log.Write("inject", "falling back to synthetic typing");
+        if (TypeUnicode(text))
+        {
+            _log.Write("inject", "inserted via synthetic typing");
+            return InjectionResult.Injected;
+        }
+
+        _log.Write("inject", "SendInput reported failure — nothing was inserted");
+        return InjectionResult.Failed;
+    }
+
+    private static string DescribeHeldModifiers()
+    {
+        var names = new List<string>();
+        string[] labels = ["LShift", "RShift", "LCtrl", "RCtrl", "LAlt", "RAlt", "LWin", "RWin"];
+
+        for (var i = 0; i < ModifierVirtualKeys.Length; i++)
+        {
+            if ((GetAsyncKeyState(ModifierVirtualKeys[i]) & 0x8000) != 0) names.Add(labels[i]);
+        }
+
+        return string.Join(", ", names);
     }
 
     private static bool TryPaste(string text, string? savedText)

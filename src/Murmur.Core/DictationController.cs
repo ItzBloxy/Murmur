@@ -10,6 +10,9 @@ namespace Murmur.Core;
 /// </summary>
 public sealed class DictationController : IAsyncDisposable
 {
+    /// <summary>Below this, a speechless recording is treated as a mistimed gesture rather than intent.</summary>
+    private const double MinimumPlausibleDictationSeconds = 1.5;
+
     private readonly IAudioCapture _audio;
     private readonly IVoiceSegmenter _segmenter;
     private readonly ITranscriptionEngine _engine;
@@ -18,6 +21,7 @@ public sealed class DictationController : IAsyncDisposable
     private readonly INotifier _notifier;
     private readonly Func<Settings> _settings;
     private readonly TimeProvider _time;
+    private readonly IDiagnosticLog _log;
 
     private readonly GestureRecognizer _gestures;
     private readonly HallucinationFilter _filter = new();
@@ -38,8 +42,10 @@ public sealed class DictationController : IAsyncDisposable
         IOverlay overlay,
         INotifier notifier,
         Func<Settings> settings,
-        TimeProvider time)
+        TimeProvider time,
+        IDiagnosticLog? log = null)
     {
+        _log = log ?? NullDiagnosticLog.Instance;
         _audio = audio;
         _segmenter = segmenter;
         _engine = engine;
@@ -62,7 +68,10 @@ public sealed class DictationController : IAsyncDisposable
 
     public async Task HandleKeyEventAsync(KeyTransition transition, long timestampMs)
     {
-        switch (_gestures.Handle(transition, timestampMs))
+        var action = _gestures.Handle(transition, timestampMs);
+        _log.Write("gesture", $"{transition} -> {action} (gesture state now {_gestures.State}, dictation {State})");
+
+        switch (action)
         {
             case GestureAction.StartRecording:
                 await StartRecordingAsync();
@@ -120,9 +129,10 @@ public sealed class DictationController : IAsyncDisposable
         {
             // Expected when the user stops mid-preview.
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Preview is best-effort. The final pass is what the user actually receives.
+            _log.Write("preview", $"preview pass failed (ignored): {ex.Message}");
         }
     }
 
@@ -134,6 +144,8 @@ public sealed class DictationController : IAsyncDisposable
             if (State != DictationState.Idle) return;
 
             _targetWindow = _injector.GetForegroundWindow();
+            _log.Write("record", $"START — target window captured: 0x{_targetWindow:X}");
+
             _preview.Clear();
             _overlay.SetPreview("");
             _segmenter.Reset();
@@ -145,6 +157,7 @@ public sealed class DictationController : IAsyncDisposable
             catch (Exception ex)
             {
                 _gestures.Reset();
+                _log.Write("error", $"could not start audio capture: {ex}");
                 _notifier.Notify("Murmur", $"Could not start recording: {ex.Message}");
                 return;
             }
@@ -207,21 +220,68 @@ public sealed class DictationController : IAsyncDisposable
                 if (reason.Length > 0) _notifier.Notify("Murmur", reason);
 
                 var buffer = _segmenter.FullBuffer;
-                if (buffer.Length == 0) return;
+                _log.Write("record", $"STOP — buffer {buffer.Length} samples ({buffer.Length / 16000.0:F2}s)");
+
+                if (buffer.Length == 0)
+                {
+                    _log.Write("record", "nothing captured — no audio reached the segmenter");
+                    return;
+                }
 
                 // Nothing was actually said. Whisper does not return empty for silence —
                 // it confidently invents subtitle credits — so this gate, not the model's
                 // own no-speech probability, is what keeps junk out of the user's textbox.
-                if (!_segmenter.ContainsSpeech()) return;
+                var hasSpeech = _segmenter.ContainsSpeech();
+                _log.Write("vad", $"speech detected in buffer: {hasSpeech}");
+
+                if (!hasSpeech)
+                {
+                    _log.Write("vad", "NO SPEECH — skipping transcription. Check the audio peak above: " +
+                                      "a near-zero peak means the wrong microphone or a muted one.");
+
+                    // Staying silent is right when someone deliberately recorded nothing.
+                    // But a recording this short is almost always a mistimed gesture, and
+                    // saying nothing leaves the user with no idea why nothing happened.
+                    var seconds = buffer.Length / 16000.0;
+                    if (seconds < MinimumPlausibleDictationSeconds)
+                    {
+                        _notifier.Notify("Murmur",
+                            $"That was only {seconds:F1}s — too short to contain speech. " +
+                            "Hold the key while you talk, or tap once to start and again to stop.");
+                    }
+
+                    return;
+                }
 
                 await _engine.EnsureLoadedAsync();
+
+                var started = _time.GetTimestamp();
                 var segments = await _engine.TranscribeAsync(
                     buffer, _settings().Language, TranscriptionQuality.Final, CancellationToken.None);
+                var elapsed = _time.GetElapsedTime(started);
+
+                _log.Write("whisper", $"language={_settings().Language} took {elapsed.TotalSeconds:F2}s, " +
+                                      $"{segments.Count} segment(s)");
+                foreach (var segment in segments)
+                {
+                    _log.Write("whisper",
+                        $"  noSpeech={segment.NoSpeechProbability:F4} " +
+                        $"rejected={_filter.ShouldReject(segment.Text, segment.NoSpeechProbability)} " +
+                        $"text=\"{segment.Text.Trim()}\"");
+                }
 
                 var text = _filter.Join(segments);
-                if (text.Length == 0) return;
+                if (text.Length == 0)
+                {
+                    _log.Write("filter", "everything was filtered out — nothing to insert");
+                    return;
+                }
 
-                switch (_injector.Inject(text, _targetWindow))
+                _log.Write("inject", $"inserting {text.Length} chars into 0x{_targetWindow:X}: \"{text}\"");
+                var result = _injector.Inject(text, _targetWindow);
+                _log.Write("inject", $"result: {result}");
+
+                switch (result)
                 {
                     case InjectionResult.CopiedToClipboardFocusChanged:
                         _notifier.Notify("Murmur", "Focus changed — the text was copied to your clipboard instead.");
@@ -233,6 +293,7 @@ public sealed class DictationController : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                _log.Write("error", $"transcription/insertion failed: {ex}");
                 _notifier.Notify("Murmur", $"Transcription failed: {ex.Message}");
             }
             finally

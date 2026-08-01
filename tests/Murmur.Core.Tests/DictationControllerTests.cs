@@ -199,13 +199,38 @@ public sealed class DictationControllerTests
     public async Task Recording_with_no_detected_speech_never_reaches_the_engine()
     {
         _segmenter.SpeechPresent = false;
+        var controller = Create();
 
-        var controller = await RecordAndStopAsync();
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+        _segmenter.Push(new float[16000 * 4]);   // four seconds: a deliberate silent recording
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 5000);
 
         Assert.DoesNotContain(_engine.Calls, c => c.Quality == TranscriptionQuality.Final);
         Assert.Empty(_injector.Injections);
-        Assert.Empty(_notifier.Messages);
         Assert.Equal(DictationState.Idle, controller.State);
+
+        // Deliberately silent for four seconds: say nothing rather than nag.
+        Assert.Empty(_notifier.Messages);
+    }
+
+    /// <summary>
+    /// A sub-second speechless recording is nearly always a mistimed gesture — the press
+    /// was read as push-to-talk and ended before any speech was captured. Saying nothing
+    /// leaves the user with no idea why their dictation vanished.
+    /// </summary>
+    [Fact]
+    public async Task A_very_short_speechless_recording_explains_itself()
+    {
+        _segmenter.SpeechPresent = false;
+        var controller = Create();
+
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        _segmenter.Push(new float[4800]);   // 0.3s, exactly what a mistimed tap produces
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 800);
+
+        Assert.Empty(_injector.Injections);
+        Assert.Contains(_notifier.Messages, m => m.Contains("too short", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

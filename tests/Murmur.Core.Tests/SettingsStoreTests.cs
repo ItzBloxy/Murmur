@@ -24,7 +24,7 @@ public sealed class SettingsStoreTests : IDisposable
 
         Assert.Equal("da", settings.Language);
         Assert.Equal("RControlKey", settings.Hotkey);
-        Assert.Equal(400, settings.HoldThresholdMs);
+        Assert.Equal(700, settings.HoldThresholdMs);
         Assert.Equal(5, settings.IdleUnloadMinutes);
         Assert.Equal(5, settings.MaxRecordingMinutes);
         Assert.Equal(500, settings.VadSilenceMs);
