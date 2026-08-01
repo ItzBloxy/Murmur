@@ -42,6 +42,12 @@ public sealed partial class OverlayWindow : Form, IOverlay
         };
 
         Controls.Add(_label);
+
+        // Force handle creation now, on the UI thread. Without a handle, InvokeRequired
+        // reports false from *any* thread, so RunOnUiThread would marshal nothing and the
+        // first Show() would create the window on the hotkey pump's worker — a thread with
+        // no message loop, where it can never paint.
+        _ = Handle;
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -107,7 +113,8 @@ public sealed partial class OverlayWindow : Form, IOverlay
 
     private void RunOnUiThread(Action action)
     {
-        if (IsDisposed) return;
+        if (IsDisposed || !IsHandleCreated) return;
+
         if (InvokeRequired) BeginInvoke(action);
         else action();
     }

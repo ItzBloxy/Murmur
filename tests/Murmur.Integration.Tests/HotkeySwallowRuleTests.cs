@@ -98,4 +98,44 @@ public sealed class HotkeySwallowRuleTests
         // Otherwise binding "Ctrl" would swallow every Ctrl press and break Ctrl+C.
         Assert.False(HotkeySwallowRule.ShouldSwallow(key));
     }
+
+    // Window messages cannot say which Ctrl was pressed, so the rebinding dialog probes the
+    // physical key state. Without this, choosing Right Ctrl silently binds both sides.
+
+    [Theory]
+    [InlineData(Keys.ControlKey, Keys.RControlKey)]
+    [InlineData(Keys.ShiftKey, Keys.RShiftKey)]
+    [InlineData(Keys.Menu, Keys.RMenu)]
+    public void The_right_hand_side_is_resolved_when_it_is_down(Keys generic, Keys expected)
+    {
+        Assert.Equal(expected, HotkeySwallowRule.ResolveSide(generic, key => key == expected));
+    }
+
+    [Theory]
+    [InlineData(Keys.ControlKey, Keys.LControlKey)]
+    [InlineData(Keys.ShiftKey, Keys.LShiftKey)]
+    [InlineData(Keys.Menu, Keys.LMenu)]
+    public void The_left_hand_side_is_resolved_when_it_is_down(Keys generic, Keys expected)
+    {
+        Assert.Equal(expected, HotkeySwallowRule.ResolveSide(generic, key => key == expected));
+    }
+
+    [Fact]
+    public void An_unresolvable_modifier_stays_generic_and_matches_either_side()
+    {
+        var resolved = HotkeySwallowRule.ResolveSide(Keys.ControlKey, _ => false);
+
+        Assert.Equal(Keys.ControlKey, resolved);
+        Assert.True(HotkeySwallowRule.Matches(resolved, Keys.LControlKey));
+        Assert.True(HotkeySwallowRule.Matches(resolved, Keys.RControlKey));
+    }
+
+    [Theory]
+    [InlineData(Keys.Oem6)]
+    [InlineData(Keys.F9)]
+    [InlineData(Keys.RControlKey)]
+    public void Non_generic_keys_are_returned_unchanged(Keys key)
+    {
+        Assert.Equal(key, HotkeySwallowRule.ResolveSide(key, _ => true));
+    }
 }

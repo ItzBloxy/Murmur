@@ -48,6 +48,31 @@ public static class HotkeySwallowRule
         };
     }
 
+    /// <summary>
+    /// Turns a generic modifier into the side actually pressed.
+    ///
+    /// A rebinding dialog reads virtual-key codes from window messages, which report
+    /// <c>VK_CONTROL</c> for either Ctrl. Storing that verbatim means the binding matches
+    /// both sides, so a user who deliberately pressed Right Ctrl finds Left Ctrl triggering
+    /// too. Probing which side is physically down at capture time recovers the distinction.
+    /// </summary>
+    /// <param name="isDown">Reports whether a specific virtual key is currently held.</param>
+    public static Keys ResolveSide(Keys key, Func<Keys, bool> isDown)
+    {
+        return key switch
+        {
+            Keys.ControlKey => Pick(Keys.LControlKey, Keys.RControlKey),
+            Keys.ShiftKey => Pick(Keys.LShiftKey, Keys.RShiftKey),
+            Keys.Menu => Pick(Keys.LMenu, Keys.RMenu),
+            _ => key,
+        };
+
+        // Falls back to the generic key if neither side reports as down, which still
+        // matches either side rather than silently binding to nothing.
+        Keys Pick(Keys left, Keys right) =>
+            isDown(right) ? right : isDown(left) ? left : key;
+    }
+
     public static Keys Parse(string name) =>
         Enum.TryParse<Keys>(name, ignoreCase: true, out var key) && Enum.IsDefined(key)
             ? key

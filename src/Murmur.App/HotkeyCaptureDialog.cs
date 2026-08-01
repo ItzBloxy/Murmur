@@ -1,5 +1,7 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Murmur.Platform;
 
 namespace Murmur.App;
 
@@ -7,7 +9,7 @@ namespace Murmur.App;
 /// Captures the next key pressed and returns its <see cref="Keys"/> name. Modifier keys are
 /// accepted as bindings in their own right, which is why the default is Right Ctrl.
 /// </summary>
-public sealed class HotkeyCaptureDialog : Form
+public sealed partial class HotkeyCaptureDialog : Form
 {
     private readonly Label _prompt;
 
@@ -51,9 +53,17 @@ public sealed class HotkeyCaptureDialog : Form
             return true;
         }
 
-        SelectedHotkey = key.ToString();
+        // A window message reports VK_CONTROL for either Ctrl, so ask the keyboard which
+        // side is actually held. Without this, picking Right Ctrl also binds Left Ctrl.
+        SelectedHotkey = HotkeySwallowRule.ResolveSide(key, IsPhysicallyDown).ToString();
+
         DialogResult = DialogResult.OK;
         Close();
         return true;
     }
+
+    private static bool IsPhysicallyDown(Keys key) => (GetAsyncKeyState((int)key) & 0x8000) != 0;
+
+    [LibraryImport("user32.dll")]
+    private static partial short GetAsyncKeyState(int vKey);
 }

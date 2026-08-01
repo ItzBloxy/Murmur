@@ -119,6 +119,8 @@ public sealed class DictationController : IAsyncDisposable
                 samples, _settings().Language, TranscriptionQuality.Preview, cancellation.Token);
 
             var text = _filter.Join(segments);
+            _log.Write("preview", $"transcribed phrase: \"{text}\"");
+
             if (text.Length == 0 || State != DictationState.Recording) return;
 
             if (_preview.Length > 0) _preview.Append(' ');
@@ -329,7 +331,11 @@ public sealed class DictationController : IAsyncDisposable
 
     // Offloaded because this fires on the audio device's recording thread. Transcribing a
     // preview inline there would stall capture and drop the audio still being spoken.
-    private void OnSegmentCompleted(float[] samples) => _background = Task.Run(() => HandleSegmentAsync(samples));
+    private void OnSegmentCompleted(float[] samples)
+    {
+        _log.Write("segment", $"phrase boundary detected: {samples.Length} samples ({samples.Length / 16000.0:F2}s)");
+        _background = Task.Run(() => HandleSegmentAsync(samples));
+    }
 
     private void OnAudioFailed(string message) => _background = AbortRecordingAsync(message);
 

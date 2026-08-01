@@ -30,6 +30,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Murmur.Core\Murmur.Core.csproj" />
     <ProjectReference Include="..\..\src\Murmur.Platform\Murmur.Platform.csproj" />
+    <ProjectReference Include="..\..\src\Murmur.App\Murmur.App.csproj" />
   </ItemGroup>
 
 </Project>
