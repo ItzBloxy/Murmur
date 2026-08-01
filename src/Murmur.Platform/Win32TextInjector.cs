@@ -107,11 +107,23 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
         return string.Join(", ", names);
     }
 
-    private static bool TryPaste(string text, string? savedText)
+    private bool TryPaste(string text, string? savedText)
     {
-        if (!TrySetClipboardText(text)) return false;
+        if (!TrySetClipboardText(text))
+        {
+            _log.Write("inject", "could not place the transcript on the clipboard");
+            return false;
+        }
 
-        SendKeyChord(0x11 /* VK_CONTROL */, 0x56 /* V */);
+        if (!SendKeyChord(0x11 /* VK_CONTROL */, 0x56 /* V */))
+        {
+            _log.Write("inject",
+                $"SendInput rejected Ctrl+V (Win32 error {Marshal.GetLastWin32Error()}, " +
+                $"cbSize={Marshal.SizeOf<INPUT>()})");
+
+            if (savedText is not null) TrySetClipboardText(savedText);
+            return false;
+        }
 
         Thread.Sleep(ClipboardRestoreDelayMs);
         if (savedText is not null) TrySetClipboardText(savedText);
@@ -120,23 +132,23 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
         return true;
     }
 
-    private static bool ClipboardHoldsOnlyText(out string? savedText)
+    private bool ClipboardHoldsOnlyText(out string? savedText)
     {
         savedText = null;
 
         try
         {
-            if (Clipboard.ContainsImage() || Clipboard.ContainsFileDropList() || Clipboard.ContainsAudio())
-            {
-                return false;
-            }
+            if (Clipboard.ContainsImage()) { _log.Write("inject", "clipboard holds an image — will not clobber it"); return false; }
+            if (Clipboard.ContainsFileDropList()) { _log.Write("inject", "clipboard holds files — will not clobber it"); return false; }
+            if (Clipboard.ContainsAudio()) { _log.Write("inject", "clipboard holds audio — will not clobber it"); return false; }
 
             if (Clipboard.ContainsText()) savedText = Clipboard.GetText();
             return true;
         }
-        catch (ExternalException)
+        catch (ExternalException ex)
         {
-            return false;   // another application holds the clipboard open
+            _log.Write("inject", $"clipboard is locked by another application: {ex.Message}");
+            return false;
         }
     }
 
@@ -185,7 +197,7 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
         Thread.Sleep(10);
     }
 
-    private static void SendKeyChord(ushort modifier, ushort key)
+    private static bool SendKeyChord(ushort modifier, ushort key)
     {
         INPUT[] inputs =
         [
@@ -195,10 +207,10 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
             KeyInput(modifier, KEYEVENTF_KEYUP),
         ];
 
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == inputs.Length;
     }
 
-    private static bool TypeUnicode(string text)
+    private bool TypeUnicode(string text)
     {
         foreach (var c in text)
         {
@@ -208,7 +220,14 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
                 UnicodeInput(c, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
             ];
 
-            if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == 0) return false;
+            if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == 0)
+            {
+                _log.Write("inject",
+                    $"SendInput rejected input (Win32 error {Marshal.GetLastWin32Error()}, " +
+                    $"cbSize={Marshal.SizeOf<INPUT>()}) while typing '{c}'");
+                return false;
+            }
+
             Thread.Sleep(1);
         }
 
@@ -227,17 +246,42 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
         union = new INPUTUNION { ki = new KEYBDINPUT { wVk = 0, wScan = character, dwFlags = flags } },
     };
 
+    /// <summary>
+    /// Exposed so a test can assert this matches the OS ABI. It silently did not: the union
+    /// originally declared only KEYBDINPUT, making INPUT 32 bytes on x64 where Windows
+    /// requires 40. SendInput validates cbSize and returns 0 on a mismatch, so every
+    /// insertion — paste and typing alike — failed without any visible cause.
+    /// </summary>
+    public static int NativeInputStructSize => Marshal.SizeOf<INPUT>();
+
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
     {
-        public int type;
+        public uint type;
         public INPUTUNION union;
     }
 
+    /// <summary>
+    /// Must carry the largest member, not just the one we use. MOUSEINPUT is the largest,
+    /// and its size is what sets sizeof(INPUT).
+    /// </summary>
     [StructLayout(LayoutKind.Explicit)]
     private struct INPUTUNION
     {
+        [FieldOffset(0)] public MOUSEINPUT mi;
         [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public nuint dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -248,6 +292,14 @@ public sealed partial class Win32TextInjector(IDiagnosticLog? log = null) : ITex
         public uint dwFlags;
         public uint time;
         public nuint dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
     }
 
     [LibraryImport("user32.dll", EntryPoint = "GetForegroundWindow")]

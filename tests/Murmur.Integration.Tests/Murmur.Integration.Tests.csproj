@@ -7,6 +7,8 @@
     <RootNamespace>Murmur.Integration.Tests</RootNamespace>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Required by [LibraryImport] source generation in the UI injection test. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
