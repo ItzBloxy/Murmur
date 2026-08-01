@@ -23,4 +23,15 @@ public sealed record Settings
 
     /// <summary>"cuda" or "cpu".</summary>
     public string Device { get; init; } = "cuda";
+
+    /// <summary>
+    /// "onStop" inserts the whole dictation once, transcribed in a single pass — Whisper
+    /// sees the entire utterance, which is what gives it consistent punctuation,
+    /// capitalisation and proper-noun spelling.
+    ///
+    /// "asYouSpeak" inserts each phrase as you pause, so text appears while you talk. Each
+    /// phrase is transcribed alone, so cross-phrase context is lost. Nothing is ever
+    /// rewritten or deleted in either mode.
+    /// </summary>
+    public string InsertMode { get; init; } = "onStop";
 }

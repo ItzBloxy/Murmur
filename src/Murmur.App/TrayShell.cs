@@ -22,6 +22,8 @@ public sealed class TrayShell : INotifier, IDisposable
     private readonly ToolStripMenuItem _status = new() { Enabled = false };
     private readonly ToolStripMenuItem _danish = new("Danish");
     private readonly ToolStripMenuItem _english = new("English");
+    private readonly ToolStripMenuItem _insertOnStop = new("When I stop  (best accuracy)");
+    private readonly ToolStripMenuItem _insertAsYouSpeak = new("As I speak  (each phrase)");
     private readonly ToolStripMenuItem _hotkey = new();
     private readonly ToolStripMenuItem _startWithWindows = new("Start with Windows") { CheckOnClick = true };
     private readonly ToolStripMenuItem _preload = new("Preload model");
@@ -36,12 +38,16 @@ public sealed class TrayShell : INotifier, IDisposable
         var language = new ToolStripMenuItem("Language");
         language.DropDownItems.AddRange([_danish, _english]);
 
+        var insertMode = new ToolStripMenuItem("Insert text");
+        insertMode.DropDownItems.AddRange([_insertOnStop, _insertAsYouSpeak]);
+
         var menu = new ContextMenuStrip();
         menu.Items.AddRange(
         [
             _status,
             new ToolStripSeparator(),
             language,
+            insertMode,
             new ToolStripSeparator(),
             _hotkey,
             _startWithWindows,
@@ -56,6 +62,8 @@ public sealed class TrayShell : INotifier, IDisposable
 
         _danish.Click += (_, _) => LanguageChanged?.Invoke("da");
         _english.Click += (_, _) => LanguageChanged?.Invoke("en");
+        _insertOnStop.Click += (_, _) => InsertModeChanged?.Invoke("onStop");
+        _insertAsYouSpeak.Click += (_, _) => InsertModeChanged?.Invoke("asYouSpeak");
         _hotkey.Click += (_, _) => HotkeyChangeRequested?.Invoke();
         _startWithWindows.Click += (_, _) => StartWithWindowsToggled?.Invoke(_startWithWindows.Checked);
         _preload.Click += (_, _) => PreloadRequested?.Invoke();
@@ -69,6 +77,7 @@ public sealed class TrayShell : INotifier, IDisposable
     }
 
     public event Action<string>? LanguageChanged;
+    public event Action<string>? InsertModeChanged;
     public event Action? HotkeyChangeRequested;
     public event Action<bool>? StartWithWindowsToggled;
     public event Action? PreloadRequested;
@@ -80,6 +89,8 @@ public sealed class TrayShell : INotifier, IDisposable
     {
         _danish.Checked = settings.Language == "da";
         _english.Checked = settings.Language == "en";
+        _insertAsYouSpeak.Checked = settings.InsertMode == "asYouSpeak";
+        _insertOnStop.Checked = !_insertAsYouSpeak.Checked;
         _hotkey.Text = $"Hotkey…  ({settings.Hotkey})";
         _startWithWindows.Checked = settings.StartWithWindows;
     }

@@ -16,6 +16,13 @@ public interface IVoiceSegmenter
     float[] FullBuffer { get; }
 
     /// <summary>
+    /// Audio captured after the last emitted phrase. When phrases are inserted as they
+    /// complete, this is the only part not yet delivered, so re-transcribing the whole
+    /// buffer at the end would duplicate everything already typed.
+    /// </summary>
+    float[] UnconsumedTail { get; }
+
+    /// <summary>
     /// Whether the full buffer contains any detected speech at all.
     ///
     /// This is the gate that stops Whisper hallucinating on silence, and it is the only
@@ -24,5 +31,5 @@ public interface IVoiceSegmenter
     /// NoSpeechProbability of exactly 0.0 — so Whisper's own confidence signal offers no
     /// protection whatsoever. Runs detection over the buffer, so call it once at stop.
     /// </summary>
-    bool ContainsSpeech();
+    bool ContainsSpeech(float[] samples);
 }

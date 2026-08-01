@@ -89,14 +89,30 @@ public sealed class SileroVoiceSegmenter : IVoiceSegmenter, IDisposable
     /// Runs detection across the entire buffer. This is the gate that keeps Whisper from
     /// inventing subtitle credits over silence — see <see cref="IVoiceSegmenter"/>.
     /// </summary>
-    public bool ContainsSpeech()
+    public float[] UnconsumedTail
     {
+        get
+        {
+            lock (_sync)
+            {
+                var length = _all.Count - _consumed;
+                if (length <= 0) return [];
+
+                var tail = new float[length];
+                _all.CopyTo(_consumed, tail, 0, length);
+                return tail;
+            }
+        }
+    }
+
+    public bool ContainsSpeech(float[] samples)
+    {
+        if (samples.Length == 0) return false;
+
         lock (_sync)
         {
-            if (_all.Count == 0) return false;
-
             _processor.ResetState();
-            var speech = _processor.DetectSpeech(_all.ToArray());
+            var speech = _processor.DetectSpeech(samples);
             _processor.ResetState();
 
             return speech.Count > 0;

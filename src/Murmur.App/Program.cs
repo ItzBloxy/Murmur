@@ -69,6 +69,7 @@ internal sealed class MurmurContext : ApplicationContext
             ("data directory", _dataDirectory),
             ("hotkey", _settings.Hotkey),
             ("language", _settings.Language),
+            ("insert mode", _settings.InsertMode),
             ("device", _settings.Device),
             ("hold threshold", $"{_settings.HoldThresholdMs} ms"),
             ("vad silence", $"{_settings.VadSilenceMs} ms"),
@@ -138,6 +139,7 @@ internal sealed class MurmurContext : ApplicationContext
     private void WireTray()
     {
         _tray.LanguageChanged += code => UpdateSettings(_settings with { Language = code });
+        _tray.InsertModeChanged += mode => UpdateSettings(_settings with { InsertMode = mode });
 
         _tray.HotkeyChangeRequested += () =>
         {

@@ -39,7 +39,10 @@ public sealed class FakeVoiceSegmenter : IVoiceSegmenter
     /// <summary>Set false to simulate a recording that captured no speech.</summary>
     public bool SpeechPresent { get; set; } = true;
 
-    public bool ContainsSpeech() => SpeechPresent && _buffer.Count > 0;
+    /// <summary>Samples after the last emitted phrase. Set by tests exercising as-you-speak.</summary>
+    public float[] UnconsumedTail { get; set; } = [];
+
+    public bool ContainsSpeech(float[] samples) => SpeechPresent && samples.Length > 0;
 
     public void Reset()
     {

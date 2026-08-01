@@ -233,6 +233,89 @@ public sealed class DictationControllerTests
         Assert.Contains(_notifier.Messages, m => m.Contains("too short", StringComparison.OrdinalIgnoreCase));
     }
 
+    // As-you-speak mode: each phrase is typed as it completes, and nothing is ever revised
+    // or deleted. The cost is that Whisper never sees the whole utterance at once.
+
+    [Fact]
+    public async Task As_you_speak_mode_inserts_each_phrase_as_it_completes()
+    {
+        _settings = _settings with { InsertMode = "asYouSpeak" };
+        _engine.Results = _ => [new TranscribedSegment("first phrase", 0.05f)];
+        var controller = Create();
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+
+        await controller.HandleSegmentAsync(new float[4000]);
+
+        Assert.Equal("first phrase", _injector.Injections.Single().Text);
+    }
+
+    [Fact]
+    public async Task As_you_speak_mode_separates_successive_phrases_with_a_space()
+    {
+        _settings = _settings with { InsertMode = "asYouSpeak" };
+        var texts = new Queue<string>(["first", "second"]);
+        _engine.Results = _ => [new TranscribedSegment(texts.Dequeue(), 0.05f)];
+        var controller = Create();
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+
+        await controller.HandleSegmentAsync(new float[4000]);
+        await controller.HandleSegmentAsync(new float[4000]);
+
+        Assert.Equal(["first", " second"], _injector.Injections.Select(i => i.Text));
+    }
+
+    /// <summary>
+    /// The whole point of tracking the tail. Transcribing the full buffer at stop would
+    /// insert the entire dictation a second time, after every phrase was already typed.
+    /// </summary>
+    [Fact]
+    public async Task As_you_speak_mode_only_transcribes_the_undelivered_tail_at_stop()
+    {
+        _settings = _settings with { InsertMode = "asYouSpeak" };
+        var controller = Create();
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+
+        _segmenter.Push(new float[16000 * 10]);          // ten seconds captured in total
+        _segmenter.UnconsumedTail = new float[16000];    // one second not yet delivered
+
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 2000);
+
+        var final = Assert.Single(_engine.Calls, c => c.Quality == TranscriptionQuality.Final);
+        Assert.Equal(16000, final.SampleCount);
+    }
+
+    [Fact]
+    public async Task On_stop_mode_does_not_insert_while_recording()
+    {
+        _settings = _settings with { InsertMode = "onStop" };
+        var controller = Create();
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+
+        await controller.HandleSegmentAsync(new float[4000]);
+
+        Assert.Empty(_injector.Injections);
+    }
+
+    [Fact]
+    public async Task On_stop_mode_transcribes_the_whole_buffer()
+    {
+        var controller = Create();
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
+        await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+
+        _segmenter.Push(new float[16000 * 3]);
+        _segmenter.UnconsumedTail = new float[16000];   // ignored in this mode
+
+        await controller.HandleKeyEventAsync(KeyTransition.Down, 2000);
+
+        var final = Assert.Single(_engine.Calls, c => c.Quality == TranscriptionQuality.Final);
+        Assert.Equal(16000 * 3, final.SampleCount);
+    }
+
     [Fact]
     public async Task Microphone_failure_aborts_without_injecting()
     {

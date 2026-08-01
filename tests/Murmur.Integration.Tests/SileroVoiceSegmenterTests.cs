@@ -70,7 +70,7 @@ public sealed class SileroVoiceSegmenterTests : IAsyncLifetime
 
         _segmenter.Push(AudioFixtures.Silence(4));
 
-        Assert.False(_segmenter.ContainsSpeech());
+        Assert.False(_segmenter.ContainsSpeech(_segmenter.FullBuffer));
     }
 
     [Fact]
@@ -78,7 +78,18 @@ public sealed class SileroVoiceSegmenterTests : IAsyncLifetime
     {
         _segmenter.Reset();
 
-        Assert.False(_segmenter.ContainsSpeech());
+        Assert.False(_segmenter.ContainsSpeech(_segmenter.FullBuffer));
+    }
+
+    [Fact]
+    public void UnconsumedTail_starts_empty_and_tracks_pushed_audio()
+    {
+        _segmenter.Reset();
+
+        _segmenter.Push(AudioFixtures.Silence(1));
+
+        // Nothing has been emitted as a phrase, so the whole buffer is still undelivered.
+        Assert.Equal(_segmenter.FullBuffer.Length, _segmenter.UnconsumedTail.Length);
     }
 
     /// <summary>
@@ -119,6 +130,6 @@ public sealed class SileroVoiceSegmenterTests : IAsyncLifetime
 
         _segmenter.Push(AudioFixtures.ReadWav("danish.wav"));
 
-        Assert.True(_segmenter.ContainsSpeech());
+        Assert.True(_segmenter.ContainsSpeech(_segmenter.FullBuffer));
     }
 }

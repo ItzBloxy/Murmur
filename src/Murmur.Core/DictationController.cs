@@ -28,6 +28,16 @@ public sealed class DictationController : IAsyncDisposable
     private readonly StringBuilder _preview = new();
     private readonly SemaphoreSlim _transition = new(1, 1);
 
+    /// <summary>
+    /// Serializes insertions. In as-you-speak mode a phrase can finish transcribing while
+    /// the previous one is still being typed, and overlapping SendInput calls interleave
+    /// characters.
+    /// </summary>
+    private readonly SemaphoreSlim _injection = new(1, 1);
+
+    private bool _insertedThisSession;
+    private bool _injectionProblemReported;
+
     private ITimer? _maxDurationTimer;
     private ITimer? _idleTimer;
     private CancellationTokenSource? _previewCancellation;
@@ -126,6 +136,8 @@ public sealed class DictationController : IAsyncDisposable
             if (_preview.Length > 0) _preview.Append(' ');
             _preview.Append(text);
             _overlay.SetPreview(_preview.ToString());
+
+            if (InsertAsYouSpeak) await InsertAsync(text, notifyOnProblem: false);
         }
         catch (OperationCanceledException)
         {
@@ -149,6 +161,8 @@ public sealed class DictationController : IAsyncDisposable
             _log.Write("record", $"START — target window captured: 0x{_targetWindow:X}");
 
             _preview.Clear();
+            _insertedThisSession = false;
+            _injectionProblemReported = false;
             _overlay.SetPreview("");
             _segmenter.Reset();
 
@@ -221,19 +235,25 @@ public sealed class DictationController : IAsyncDisposable
 
                 if (reason.Length > 0) _notifier.Notify("Murmur", reason);
 
-                var buffer = _segmenter.FullBuffer;
-                _log.Write("record", $"STOP — buffer {buffer.Length} samples ({buffer.Length / 16000.0:F2}s)");
+                // As-you-speak has already inserted every completed phrase, so only the
+                // audio after the last phrase boundary is still undelivered. Re-reading the
+                // whole buffer here would type the entire dictation a second time.
+                var buffer = InsertAsYouSpeak ? _segmenter.UnconsumedTail : _segmenter.FullBuffer;
+
+                _log.Write("record",
+                    $"STOP — {(InsertAsYouSpeak ? "trailing" : "full")} buffer {buffer.Length} samples " +
+                    $"({buffer.Length / 16000.0:F2}s)");
 
                 if (buffer.Length == 0)
                 {
-                    _log.Write("record", "nothing captured — no audio reached the segmenter");
+                    _log.Write("record", "nothing left to transcribe");
                     return;
                 }
 
                 // Nothing was actually said. Whisper does not return empty for silence —
                 // it confidently invents subtitle credits — so this gate, not the model's
                 // own no-speech probability, is what keeps junk out of the user's textbox.
-                var hasSpeech = _segmenter.ContainsSpeech();
+                var hasSpeech = _segmenter.ContainsSpeech(buffer);
                 _log.Write("vad", $"speech detected in buffer: {hasSpeech}");
 
                 if (!hasSpeech)
@@ -279,19 +299,7 @@ public sealed class DictationController : IAsyncDisposable
                     return;
                 }
 
-                _log.Write("inject", $"inserting {text.Length} chars into 0x{_targetWindow:X}: \"{text}\"");
-                var result = _injector.Inject(text, _targetWindow);
-                _log.Write("inject", $"result: {result}");
-
-                switch (result)
-                {
-                    case InjectionResult.CopiedToClipboardFocusChanged:
-                        _notifier.Notify("Murmur", "Focus changed — the text was copied to your clipboard instead.");
-                        break;
-                    case InjectionResult.Failed:
-                        _notifier.Notify("Murmur", "Could not insert text into the focused window.");
-                        break;
-                }
+                await InsertAsync(text, notifyOnProblem: true);
             }
             catch (Exception ex)
             {
@@ -306,6 +314,44 @@ public sealed class DictationController : IAsyncDisposable
         finally
         {
             _transition.Release();
+        }
+    }
+
+    private bool InsertAsYouSpeak =>
+        _settings().InsertMode.Equals("asYouSpeak", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Inserts one piece of transcript, separating it from anything already inserted this
+    /// session. Serialized, because as-you-speak can produce overlapping insertions.
+    /// </summary>
+    private async Task InsertAsync(string text, bool notifyOnProblem)
+    {
+        await _injection.WaitAsync();
+        try
+        {
+            var toInsert = _insertedThisSession ? " " + text : text;
+            _log.Write("inject", $"inserting {toInsert.Length} chars into 0x{_targetWindow:X}: \"{toInsert}\"");
+
+            var result = _injector.Inject(toInsert, _targetWindow);
+            _log.Write("inject", $"result: {result}");
+
+            if (result == InjectionResult.Injected)
+            {
+                _insertedThisSession = true;
+                return;
+            }
+
+            // In as-you-speak mode this can fire once per phrase; one balloon is plenty.
+            if (!notifyOnProblem && _injectionProblemReported) return;
+            _injectionProblemReported = true;
+
+            _notifier.Notify("Murmur", result == InjectionResult.CopiedToClipboardFocusChanged
+                ? "Focus changed — the text was copied to your clipboard instead."
+                : "Could not insert text into the focused window.");
+        }
+        finally
+        {
+            _injection.Release();
         }
     }
 
@@ -411,6 +457,7 @@ public sealed class DictationController : IAsyncDisposable
         CancelMaxDurationTimer();
         _previewCancellation?.Dispose();
         _transition.Dispose();
+        _injection.Dispose();
 
         await _engine.DisposeAsync();
     }
