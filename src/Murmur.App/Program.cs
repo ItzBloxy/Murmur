@@ -156,6 +156,9 @@ internal sealed class MurmurContext : ApplicationContext
             _ = controller.HandleKeyEventAsync(transition, timestamp);
         };
 
+        _hotkeys.HookFailed += reason =>
+            _tray.Notify("Murmur", $"The hotkey could not be registered: {reason}");
+
         _hotkeys.Rebind(_settings.Hotkey);
         _hotkeys.Start();
     }

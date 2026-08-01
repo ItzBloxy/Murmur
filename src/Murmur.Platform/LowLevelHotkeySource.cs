@@ -32,11 +32,18 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
     private uint _threadId;
     private volatile bool _running;
     private volatile bool _keyIsDown;
+    private volatile bool _failureReported;
     private Keys _boundKey = HotkeySwallowRule.Default;
 
     public LowLevelHotkeySource() => _callback = HookCallback;
 
     public event Action<KeyTransition, long>? KeyEvent;
+
+    /// <summary>
+    /// Raised once if the hook cannot be installed. The application stays running — the
+    /// hotkey simply does not fire — rather than dying on a background thread.
+    /// </summary>
+    public event Action<string>? HookFailed;
 
     public void Rebind(string hotkey)
     {
@@ -60,28 +67,59 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
 
     private void PumpMessages()
     {
-        _threadId = GetCurrentThreadId();
-        Install();
-
-        // Reinstall the hook if Windows drops it for exceeding the callback timeout.
-        using var watchdog = new System.Threading.Timer(
-            _ => { if (_running && _hookHandle == 0) Install(); },
-            null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
-
-        while (_running && GetMessage(out var message, 0, 0, 0) > 0)
+        try
         {
-            TranslateMessage(ref message);
-            DispatchMessage(ref message);
-        }
+            _threadId = GetCurrentThreadId();
+            Install();
 
-        Uninstall();
+            // Reinstall the hook if Windows drops it for exceeding the callback timeout.
+            using var watchdog = new System.Threading.Timer(
+                _ => { if (_running && _hookHandle == 0) Install(); },
+                null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+
+            while (_running && GetMessage(out var message, 0, 0, 0) > 0)
+            {
+                TranslateMessage(ref message);
+                DispatchMessage(ref message);
+            }
+
+            Uninstall();
+        }
+        catch (Exception ex)
+        {
+            // This is a background thread: an unhandled exception here terminates the whole
+            // process. Losing the hotkey is bad; killing the app while the user is mid-task
+            // is worse.
+            ReportFailure(ex.Message);
+        }
     }
 
     private void Install()
     {
-        using var process = Process.GetCurrentProcess();
-        using var module = process.MainModule!;
-        _hookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, _callback, GetModuleHandle(module.ModuleName), 0);
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            using var module = process.MainModule!;
+            _hookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, _callback, GetModuleHandle(module.ModuleName), 0);
+
+            if (_hookHandle == 0)
+            {
+                ReportFailure($"SetWindowsHookEx failed with Win32 error {Marshal.GetLastWin32Error()}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _hookHandle = 0;
+            ReportFailure(ex.Message);
+        }
+    }
+
+    /// <summary>Reports at most once — the watchdog retries every five seconds.</summary>
+    private void ReportFailure(string message)
+    {
+        if (_failureReported) return;
+        _failureReported = true;
+        HookFailed?.Invoke(message);
     }
 
     private void Uninstall()
@@ -151,7 +189,9 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
         public int ptY;
     }
 
-    [LibraryImport("user32.dll", SetLastError = true)]
+    // LibraryImport does not perform DllImport's automatic A/W suffix resolution, so every
+    // entry point below must be spelled exactly as the DLL exports it.
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
     private static partial nint SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, nint hMod, uint dwThreadId);
 
     [LibraryImport("user32.dll", SetLastError = true)]
@@ -161,7 +201,7 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
     [LibraryImport("user32.dll")]
     private static partial nint CallNextHookEx(nint hhk, int nCode, nint wParam, nint lParam);
 
-    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    [LibraryImport("kernel32.dll", EntryPoint = "GetModuleHandleW", StringMarshalling = StringMarshalling.Utf16)]
     private static partial nint GetModuleHandle(string lpModuleName);
 
     [LibraryImport("kernel32.dll")]
