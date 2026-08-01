@@ -207,6 +207,11 @@ public sealed class DictationController : IAsyncDisposable
                 var buffer = _segmenter.FullBuffer;
                 if (buffer.Length == 0) return;
 
+                // Nothing was actually said. Whisper does not return empty for silence —
+                // it confidently invents subtitle credits — so this gate, not the model's
+                // own no-speech probability, is what keeps junk out of the user's textbox.
+                if (!_segmenter.ContainsSpeech()) return;
+
                 await _engine.EnsureLoadedAsync();
                 var segments = await _engine.TranscribeAsync(
                     buffer, _settings().Language, TranscriptionQuality.Final, CancellationToken.None);

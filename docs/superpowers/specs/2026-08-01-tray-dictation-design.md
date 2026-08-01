@@ -364,15 +364,31 @@ watching" in English, "Tak fordi du så med" and subtitle-credit lines in Danish
 dictation tool this means junk text appearing when nothing was said. Three layers guard
 against it:
 
-1. Segments containing no VAD-detected speech are never sent for transcription.
+1. **Audio with no VAD-detected speech is never transcribed at all** — neither the live
+   preview segments nor the final full-buffer pass.
 2. Results above a `no_speech_prob` threshold are dropped.
 3. Output is matched against a small blocklist of known Danish and English artifacts.
 
-Layer 2 is confirmed available: `Whisper.net` 1.9.1 exposes
-`SegmentData.NoSpeechProbability`, and the processor builder additionally offers
-`WithNoSpeechThreshold(float)` to reject inside whisper.cpp before a segment is even
-emitted. Both are used — the builder threshold as a coarse gate, the property for the
-explicit check.
+**Measured against the real model, layer 1 is the only one that actually works, and
+layers 2 and 3 cannot cover for it.** Four seconds of digital silence through
+`large-v3-turbo` q8_0 produces:
+
+| Language | Output | `NoSpeechProbability` |
+|---|---|---|
+| `en` | `Thank you.` | 0.0000 |
+| `da` | `Danske tekster af Jesper Buhl Scandinavian Text Service 2018` | 0.0000 |
+
+Whisper is *maximally confident* that silence is speech, so layer 2 contributes nothing in
+the exact case it was designed for. It is retained only because it costs nothing and may
+help on noisy-but-speechless audio.
+
+Layer 3 catches the Danish credit line, which is unambiguous. It deliberately does **not**
+list bare "thank you": Whisper emits it on silence, but it is also perfectly ordinary
+dictation, and blocking it would silently eat real speech.
+
+That leaves layer 1 carrying the guarantee, which is why it must gate the final pass and
+not just the previews. `IVoiceSegmenter.ContainsSpeech()` runs VAD over the whole buffer at
+stop, and `DictationController` skips transcription entirely when it returns false.
 
 | Failure | Response |
 |---|---|

@@ -184,6 +184,24 @@ public sealed class DictationControllerTests
         Assert.Equal(DictationState.Idle, controller.State);
     }
 
+    /// <summary>
+    /// The gate that actually stops silence hallucinations. Whisper returns "Thank you."
+    /// for four seconds of digital silence with NoSpeechProbability 0.0, so nothing
+    /// downstream of the model can be trusted to catch it — it has to not run at all.
+    /// </summary>
+    [Fact]
+    public async Task Recording_with_no_detected_speech_never_reaches_the_engine()
+    {
+        _segmenter.SpeechPresent = false;
+
+        var controller = await RecordAndStopAsync();
+
+        Assert.DoesNotContain(_engine.Calls, c => c.Quality == TranscriptionQuality.Final);
+        Assert.Empty(_injector.Injections);
+        Assert.Empty(_notifier.Messages);
+        Assert.Equal(DictationState.Idle, controller.State);
+    }
+
     [Fact]
     public async Task Microphone_failure_aborts_without_injecting()
     {

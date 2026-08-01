@@ -27,10 +27,19 @@ public sealed class HallucinationFilter
     };
 
     /// <summary>Prefixes of subtitle credit lines, which carry an arbitrary name after them.</summary>
+    /// <remarks>
+    /// Observed from the real model, not guessed: four seconds of silence produced
+    /// "Danske tekster af Jesper Buhl Scandinavian Text Service 2018". Bare "thank you" is
+    /// deliberately NOT listed — Whisper emits it on silence too, but it is also perfectly
+    /// ordinary dictation, and blocking it would silently eat real speech. The VAD gate in
+    /// <c>DictationController</c> is what handles that case.
+    /// </remarks>
     private static readonly string[] ArtifactPrefixes =
     [
         "undertekster af",
         "undertekst af",
+        "danske tekster af",
+        "danske undertekster af",
         "tekstet af",
         "subtitles by",
         "subtitled by",

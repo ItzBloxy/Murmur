@@ -36,6 +36,11 @@ public sealed class FakeVoiceSegmenter : IVoiceSegmenter
     public int ResetCount { get; private set; }
     public float[] FullBuffer => [.. _buffer];
 
+    /// <summary>Set false to simulate a recording that captured no speech.</summary>
+    public bool SpeechPresent { get; set; } = true;
+
+    public bool ContainsSpeech() => SpeechPresent && _buffer.Count > 0;
+
     public void Reset()
     {
         _buffer.Clear();
