@@ -4,18 +4,21 @@ using NAudio.Wave;
 namespace Murmur.Platform;
 
 /// <summary>
-/// Captures the default input device and resamples to the 16 kHz mono float32 Whisper
-/// expects. Reports device loss through <see cref="Failed"/> rather than throwing on a
-/// background thread.
+/// Captures the default input device as the 16 kHz mono float32 Whisper expects.
+///
+/// The device is opened at 16 kHz directly rather than captured at 44.1 kHz and resampled.
+/// An earlier version used <c>MediaFoundationResampler</c> and crashed the process with an
+/// access violation: the resampler is a COM object, it was constructed on the STA keyboard-hook
+/// thread, and NAudio then called into it from an MTA thread-pool thread. Asking the driver
+/// for the rate we want removes the COM object, the apartment mismatch, and a dispose race
+/// between <see cref="Stop"/> and an in-flight read.
 /// </summary>
 public sealed class WasapiAudioCapture : IAudioCapture
 {
     private const int TargetSampleRate = 16000;
 
     private WaveInEvent? _capture;
-    private BufferedWaveProvider? _buffer;
-    private MediaFoundationResampler? _resampler;
-    private bool _stopRequested;
+    private volatile bool _stopRequested;
 
     public event Action<float[]>? FramesAvailable;
     public event Action<string>? Failed;
@@ -27,20 +30,8 @@ public sealed class WasapiAudioCapture : IAudioCapture
 
         var capture = new WaveInEvent
         {
-            WaveFormat = new WaveFormat(44100, 16, 1),
+            WaveFormat = new WaveFormat(TargetSampleRate, 16, 1),
             BufferMilliseconds = 100,
-        };
-
-        _buffer = new BufferedWaveProvider(capture.WaveFormat)
-        {
-            DiscardOnBufferOverflow = true,
-            BufferDuration = TimeSpan.FromSeconds(5),
-        };
-
-        _resampler = new MediaFoundationResampler(
-            _buffer, new WaveFormat(TargetSampleRate, 16, 1))
-        {
-            ResamplerQuality = 60,
         };
 
         capture.DataAvailable += OnDataAvailable;
@@ -52,31 +43,15 @@ public sealed class WasapiAudioCapture : IAudioCapture
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (_buffer is null || _resampler is null) return;
+        if (_stopRequested) return;
 
-        try
+        var samples = new float[e.BytesRecorded / 2];
+        for (var i = 0; i < samples.Length; i++)
         {
-            _buffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
-
-            // Drain whatever the resampler can produce right now.
-            var bytes = new byte[8192];
-            int read;
-            while ((read = _resampler.Read(bytes, 0, bytes.Length)) > 0)
-            {
-                var samples = new float[read / 2];
-                for (var i = 0; i < samples.Length; i++)
-                {
-                    samples[i] = BitConverter.ToInt16(bytes, i * 2) / 32768f;
-                }
-
-                FramesAvailable?.Invoke(samples);
-                if (read < bytes.Length) break;
-            }
+            samples[i] = BitConverter.ToInt16(e.Buffer, i * 2) / 32768f;
         }
-        catch (Exception ex)
-        {
-            Failed?.Invoke(ex.Message);
-        }
+
+        FramesAvailable?.Invoke(samples);
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
@@ -89,18 +64,17 @@ public sealed class WasapiAudioCapture : IAudioCapture
     {
         _stopRequested = true;
 
-        if (_capture is not null)
-        {
-            _capture.DataAvailable -= OnDataAvailable;
-            _capture.RecordingStopped -= OnRecordingStopped;
-            try { _capture.StopRecording(); } catch (Exception) { /* already gone */ }
-            _capture.Dispose();
-            _capture = null;
-        }
+        var capture = _capture;
+        _capture = null;
+        if (capture is null) return;
 
-        _resampler?.Dispose();
-        _resampler = null;
-        _buffer = null;
+        capture.DataAvailable -= OnDataAvailable;
+        capture.RecordingStopped -= OnRecordingStopped;
+
+        try { capture.StopRecording(); }
+        catch (Exception) { /* device already gone */ }
+
+        capture.Dispose();
     }
 
     public void Dispose() => Stop();

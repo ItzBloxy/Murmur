@@ -84,6 +84,11 @@ public sealed class DictationControllerTests
         Assert.Equal("final text", _injector.Injections.Single().Text);
     }
 
+    /// <summary>
+    /// The load is dispatched to the thread pool rather than run inline — it is seconds of
+    /// synchronous native work, and inline it would block whichever thread delivered the
+    /// hotkey. So await the background work rather than assuming it already finished.
+    /// </summary>
     [Fact]
     public async Task Model_loading_begins_while_recording_not_after()
     {
@@ -91,6 +96,7 @@ public sealed class DictationControllerTests
 
         await controller.HandleKeyEventAsync(KeyTransition.Down, 0);
         await controller.HandleKeyEventAsync(KeyTransition.Up, 50);
+        await controller.WaitForIdleAsync();
 
         Assert.True(_engine.IsLoaded);
         Assert.Equal(DictationState.Recording, controller.State);

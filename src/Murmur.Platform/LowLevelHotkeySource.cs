@@ -27,6 +27,12 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly LowLevelKeyboardProc _callback;
 
+    /// <summary>
+    /// Everything the hotkey triggers runs here, never on the hook thread. See
+    /// <see cref="HotkeyEventPump"/> for why that separation is mandatory rather than tidy.
+    /// </summary>
+    private readonly HotkeyEventPump _pump = new();
+
     private Thread? _thread;
     private nint _hookHandle;
     private uint _threadId;
@@ -35,7 +41,11 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
     private volatile bool _failureReported;
     private Keys _boundKey = HotkeySwallowRule.Default;
 
-    public LowLevelHotkeySource() => _callback = HookCallback;
+    public LowLevelHotkeySource()
+    {
+        _callback = HookCallback;
+        _pump.KeyEvent += (transition, timestamp) => KeyEvent?.Invoke(transition, timestamp);
+    }
 
     public event Action<KeyTransition, long>? KeyEvent;
 
@@ -136,21 +146,26 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
         var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
         var key = (Keys)data.vkCode;
 
-        if (key != _boundKey) return CallNextHookEx(_hookHandle, code, wParam, lParam);
+        if (!HotkeySwallowRule.Matches(_boundKey, key))
+        {
+            return CallNextHookEx(_hookHandle, code, wParam, lParam);
+        }
 
         var message = (int)wParam;
         var timestamp = _clock.ElapsedMilliseconds;
 
+        // Post, never invoke. This callback must return in microseconds: Windows silently
+        // unhooks a slow one, and its STA apartment corrupts COM objects built downstream.
         if (message is WM_KEYDOWN or WM_SYSKEYDOWN)
         {
             var transition = _keyIsDown ? KeyTransition.Repeat : KeyTransition.Down;
             _keyIsDown = true;
-            KeyEvent?.Invoke(transition, timestamp);
+            _pump.Post(transition, timestamp);
         }
         else if (message is WM_KEYUP or WM_SYSKEYUP)
         {
             _keyIsDown = false;
-            KeyEvent?.Invoke(KeyTransition.Up, timestamp);
+            _pump.Post(KeyTransition.Up, timestamp);
         }
 
         return HotkeySwallowRule.ShouldSwallow(_boundKey)
@@ -163,6 +178,7 @@ public sealed partial class LowLevelHotkeySource : IHotkeySource
         _running = false;
         if (_threadId != 0) PostThreadMessage(_threadId, WM_QUIT, 0, 0);
         _thread?.Join(TimeSpan.FromSeconds(2));
+        _pump.Dispose();
     }
 
     private delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);

@@ -161,7 +161,9 @@ public sealed class DictationController : IAsyncDisposable
                 TimeSpan.FromMinutes(_settings().MaxRecordingMinutes),
                 Timeout.InfiniteTimeSpan);
 
-            _background = LoadModelInBackgroundAsync();
+            // Task.Run, not a bare call: loading the model is seconds of synchronous native
+            // work, and this method runs inline on whichever thread delivered the hotkey.
+            _background = Task.Run(LoadModelInBackgroundAsync);
         }
         finally
         {
@@ -264,7 +266,9 @@ public sealed class DictationController : IAsyncDisposable
         if (State == DictationState.Recording) _segmenter.Push(samples);
     }
 
-    private void OnSegmentCompleted(float[] samples) => _background = HandleSegmentAsync(samples);
+    // Offloaded because this fires on the audio device's recording thread. Transcribing a
+    // preview inline there would stall capture and drop the audio still being spoken.
+    private void OnSegmentCompleted(float[] samples) => _background = Task.Run(() => HandleSegmentAsync(samples));
 
     private void OnAudioFailed(string message) => _background = AbortRecordingAsync(message);
 
