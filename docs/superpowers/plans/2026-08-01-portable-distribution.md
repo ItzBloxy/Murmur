@@ -354,9 +354,12 @@ In the same file, before the closing `</Project>`:
 
     This runs after publish rather than conditioning the PackageReference itself. A
     conditional PackageReference reads better but alters the NuGet restore graph, making the
-    output depend on whether restore last ran with the same property — a --no-restore
-    publish would silently ship 1.8 GB of CUDA. Deleting from the publish directory cannot
+    output depend on whether restore last ran with the same property — a publish that skips
+    restore would silently ship 1.8 GB of CUDA. Deleting from the publish directory cannot
     be defeated by a stale assets file.
+
+    (Note: XML comments cannot contain a double hyphen, so the restore-skipping flag is
+    described in words rather than written out.)
   -->
   <Target Name="StripCudaFromPortablePublish" AfterTargets="Publish" Condition="'$(Portable)' == 'true'">
     <ItemGroup>
