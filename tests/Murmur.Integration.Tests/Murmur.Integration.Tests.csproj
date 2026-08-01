@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <None Include="fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- So the backend assertion tests exercise the same runtime the app ships with. -->
+    <None Include="..\..\native\cuda12\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

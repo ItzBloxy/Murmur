@@ -1,5 +1,9 @@
 bin/
 obj/
+
+# ~752 MB of NVIDIA redistributables. See native/README.md for what they are and how to
+# restore them; the app falls back to Vulkan without them.
+native/cuda12/*.dll
 .vs/
 *.user
 TestResults/

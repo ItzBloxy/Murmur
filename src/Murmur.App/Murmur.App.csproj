@@ -5,6 +5,14 @@
     <ProjectReference Include="..\Murmur.Platform\Murmur.Platform.csproj" />
   </ItemGroup>
 
+  <!--
+    NVIDIA's CUDA 12 runtime, bundled so the GPU backend works without a toolkit install.
+    Absent, Whisper.net falls back to Vulkan. See native/README.md.
+  -->
+  <ItemGroup>
+    <None Include="..\..\native\cuda12\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>

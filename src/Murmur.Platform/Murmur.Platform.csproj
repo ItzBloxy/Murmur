@@ -8,7 +8,12 @@
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
-    <PackageReference Include="Whisper.net.Runtime.Cuda" Version="1.9.1" />
+    <!--
+      Cuda12, not Cuda. The Cuda package is built against CUDA 13 and cannot load on a 12.x
+      driver; it was silently falling back to the CPU backend and costing ~40x.
+      Vulkan stays as the fallback: it needs nothing installed beyond the display driver.
+    -->
+    <PackageReference Include="Whisper.net.Runtime.Cuda12" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" />
   </ItemGroup>
 
