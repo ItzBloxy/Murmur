@@ -37,6 +37,11 @@
     restore would silently ship 1.8 GB of CUDA. Deleting from the publish directory cannot
     be defeated by a stale assets file.
   -->
+  <!-- Ships inside the zip. Packaging, so it has no business in a normal build. -->
+  <ItemGroup Condition="'$(Portable)' == 'true'">
+    <None Include="..\..\packaging\README.txt" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <Target Name="StripCudaFromPortablePublish" AfterTargets="Publish" Condition="'$(Portable)' == 'true'">
     <ItemGroup>
       <PortableCudaLeftovers Include="$(PublishDir)cudart64_12.dll" />

@@ -405,11 +405,15 @@ did not match and the zip would carry 1.8 GB of unusable CUDA.
 
 - [ ] **Step 7: Commit**
 
-Confirm `dist/` is not staged before committing — if it appears, Step 1 was skipped:
+Confirm nothing under `dist/` is staged before committing — if anything appears, Step 1 was
+skipped. Scope the check to the path rather than grepping for the word: this plan's own
+filename contains "distribution", so a bare `grep dist` reports a false positive.
 
 ```bash
-git status --short | grep dist || echo "dist/ correctly ignored"
+git status --short -- dist/
 ```
+
+Expected: no output at all.
 
 ```bash
 git add -A && git commit -m "build: add a Portable property that strips CUDA from published output"
