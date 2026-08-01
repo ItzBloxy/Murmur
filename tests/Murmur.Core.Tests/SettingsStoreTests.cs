@@ -29,7 +29,7 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(5, settings.MaxRecordingMinutes);
         Assert.Equal(500, settings.VadSilenceMs);
         Assert.False(settings.StartWithWindows);
-        Assert.Equal("cuda", settings.Device);
+        Assert.Equal("auto", settings.Device);
     }
 
     [Fact]

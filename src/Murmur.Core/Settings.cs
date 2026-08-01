@@ -21,8 +21,13 @@ public sealed record Settings
     public int VadSilenceMs { get; init; } = 500;
     public bool StartWithWindows { get; init; }
 
-    /// <summary>"cuda" or "cpu".</summary>
-    public string Device { get; init; } = "cuda";
+    /// <summary>
+    /// "auto" or "cpu". "auto" lets Whisper.net load the best backend available — CUDA if
+    /// its runtime is present, otherwise Vulkan, otherwise CPU. It deliberately does not
+    /// name a backend: the setting records a preference, and only the "backend=" line in
+    /// the log says what actually loaded. A legacy value of "cuda" is read as "auto".
+    /// </summary>
+    public string Device { get; init; } = "auto";
 
     /// <summary>
     /// "onStop" inserts the whole dictation once, transcribed in a single pass — Whisper

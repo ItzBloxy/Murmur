@@ -44,6 +44,14 @@ public sealed class WhisperEngine(ModelStore store, string device, IDiagnosticLo
     public string VadModelPath =>
         _vadModelPath ?? throw new InvalidOperationException("Call EnsureModelsDownloadedAsync first.");
 
+    /// <summary>
+    /// Whether a configured device string asks for a GPU. Only "cpu" declines; everything
+    /// else, including settings files still saying "cuda" from before the rename, prefers
+    /// a GPU and lets Whisper.net pick whichever backend actually loads.
+    /// </summary>
+    public static bool PrefersGpu(string device) =>
+        !device.Equals("cpu", StringComparison.OrdinalIgnoreCase);
+
     public void Pin() => IsPinned = true;
     public void Unpin() => IsPinned = false;
 
@@ -78,7 +86,7 @@ public sealed class WhisperEngine(ModelStore store, string device, IDiagnosticLo
                 await EnsureModelsDownloadedAsync(progress: null, cancellationToken);
             }
 
-            var preferGpu = !device.Equals("cpu", StringComparison.OrdinalIgnoreCase) && !UsingCpuFallback;
+            var preferGpu = PrefersGpu(device) && !UsingCpuFallback;
 
             try
             {
