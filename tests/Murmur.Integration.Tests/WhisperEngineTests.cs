@@ -5,6 +5,7 @@ using Murmur.Platform;
 namespace Murmur.Integration.Tests;
 
 [Trait("Category", "Integration")]
+[Collection(WhisperGpuCollection.Name)]
 public sealed class WhisperEngineTests : IAsyncLifetime
 {
     private WhisperEngine _engine = null!;

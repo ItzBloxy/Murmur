@@ -80,7 +80,7 @@ internal sealed class MurmurContext : ApplicationContext
         _audio.LogDeviceInventory();
 
         var store = new ModelStore(Path.Combine(_dataDirectory, "models"));
-        _engine = new WhisperEngine(store, _settings.Device);
+        _engine = new WhisperEngine(store, _settings.Device, _log);
 
         WireTray();
         WireHotkeys();

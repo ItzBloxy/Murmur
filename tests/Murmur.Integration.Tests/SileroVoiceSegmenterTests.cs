@@ -3,6 +3,7 @@ using Murmur.Platform;
 namespace Murmur.Integration.Tests;
 
 [Trait("Category", "Integration")]
+[Collection(WhisperGpuCollection.Name)]
 public sealed class SileroVoiceSegmenterTests : IAsyncLifetime
 {
     private WhisperEngine _engine = null!;
