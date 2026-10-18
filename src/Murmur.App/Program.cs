@@ -106,7 +106,10 @@ internal sealed class MurmurContext : ApplicationContext
 
         try
         {
-            _tray.Notify("Murmur", "Preparing the speech model. First run downloads about 870 MB.");
+            if (_engine.NeedsWhisperModelDownload)
+            {
+                _tray.Notify("Murmur", "Preparing the speech model. First run downloads about 870 MB.");
+            }
 
             // Progress fires per 80 KB chunk. Throttle to the tooltip every ~10 MB —
             // a balloon per chunk would fire thousands of times.

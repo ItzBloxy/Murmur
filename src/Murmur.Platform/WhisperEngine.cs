@@ -52,6 +52,12 @@ public sealed class WhisperEngine(ModelStore store, string device, IDiagnosticLo
     public static bool PrefersGpu(string device) =>
         !device.Equals("cpu", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether startup is about to fetch the ~870 MB whisper model. The VAD model is under
+    /// 1 MB and not worth announcing, so it is deliberately not part of this check.
+    /// </summary>
+    public bool NeedsWhisperModelDownload => !store.IsCached(WhisperModelFileName);
+
     public void Pin() => IsPinned = true;
     public void Unpin() => IsPinned = false;
 

@@ -14,6 +14,13 @@ public sealed class ModelStore(string directory)
 
     public string PathFor(string fileName) => System.IO.Path.Combine(directory, fileName);
 
+    /// <summary>Whether <see cref="EnsureAsync"/> would return without downloading.</summary>
+    public bool IsCached(string fileName)
+    {
+        var path = PathFor(fileName);
+        return File.Exists(path) && new FileInfo(path).Length >= MinimumPlausibleModelBytes;
+    }
+
     /// <param name="openStream">Fetches the model. Called only when the file is not cached.</param>
     /// <param name="progress">Receives cumulative bytes written, if supplied.</param>
     public async Task<string> EnsureAsync(
@@ -25,7 +32,7 @@ public sealed class ModelStore(string directory)
         System.IO.Directory.CreateDirectory(directory);
 
         var finalPath = PathFor(fileName);
-        if (File.Exists(finalPath) && new FileInfo(finalPath).Length >= MinimumPlausibleModelBytes)
+        if (IsCached(fileName))
         {
             return finalPath;
         }

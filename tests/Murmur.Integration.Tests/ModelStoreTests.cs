@@ -99,4 +99,59 @@ public sealed class ModelStoreTests : IDisposable
         await Task.Delay(50, Ct);
         Assert.NotEmpty(reports);
     }
+
+    [Fact]
+    public void A_missing_file_is_not_cached()
+    {
+        Assert.False(new ModelStore(_dir).IsCached("model.bin"));
+    }
+
+    [Fact]
+    public async Task A_plausible_file_is_cached()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_dir, "model.bin"), new byte[2048], Ct);
+
+        Assert.True(new ModelStore(_dir).IsCached("model.bin"));
+    }
+
+    /// <summary>
+    /// Must agree with <see cref="ModelStore.EnsureAsync"/>, which re-downloads a truncated
+    /// file — otherwise startup would skip the download notice and then download anyway.
+    /// </summary>
+    [Fact]
+    public async Task A_truncated_file_is_not_cached()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_dir, "model.bin"), new byte[10], Ct);
+
+        Assert.False(new ModelStore(_dir).IsCached("model.bin"));
+    }
+
+    [Fact]
+    public async Task A_partial_download_is_not_cached()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(_dir, "model.bin.partial"), new byte[4096], Ct);
+
+        Assert.False(new ModelStore(_dir).IsCached("model.bin"));
+    }
+
+    [Fact]
+    public void A_missing_directory_is_not_cached()
+    {
+        Assert.False(new ModelStore(Path.Combine(_dir, "never-created")).IsCached("model.bin"));
+    }
+
+    /// <summary>
+    /// Gates the startup balloon. Only the whisper model is large enough to be worth
+    /// announcing; the VAD model is under 1 MB.
+    /// </summary>
+    [Fact]
+    public async Task The_engine_needs_a_download_only_while_the_whisper_model_is_missing()
+    {
+        await using var engine = new WhisperEngine(new ModelStore(_dir), device: "cpu");
+        Assert.True(engine.NeedsWhisperModelDownload);
+
+        await File.WriteAllBytesAsync(Path.Combine(_dir, WhisperEngine.WhisperModelFileName), new byte[2048], Ct);
+
+        Assert.False(engine.NeedsWhisperModelDownload);
+    }
 }
