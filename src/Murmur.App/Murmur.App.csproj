@@ -23,6 +23,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <!-- The file people download and run is Murmur.exe; the project keeps its folder name. -->
+    <AssemblyName>Murmur</AssemblyName>
     <Version>1.0.0</Version>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
@@ -33,33 +35,46 @@
   </PropertyGroup>
 
   <!--
-    The Whisper.net.Runtime.Cuda12 package contributes runtimes/cuda12 regardless of the
-    ItemGroup above, so a portable publish has to remove both carriers.
+    The portable release is one Murmur.exe.
 
-    This runs after publish rather than conditioning the PackageReference itself. A
-    conditional PackageReference reads better but alters the NuGet restore graph, making the
-    output depend on whether restore last ran with the same property — a publish that skips
-    restore would silently ship 1.8 GB of CUDA. Deleting from the publish directory cannot
-    be defeated by a stale assets file.
+    IncludeAllContentForSelfExtract, not just IncludeNativeLibrariesForSelfExtract: the
+    Whisper.net runtimes arrive as content items targeted at runtimes/<backend>/win-x64, not
+    as NuGet native assets, so only this flag puts them in the bundle. It also extracts
+    everything to one folder on first launch (%TEMP%\.net), which keeps the layout Whisper.net's
+    loader probes — the same layout a folder publish has.
   -->
-  <!-- Ships inside the zip. Packaging, so it has no business in a normal build. -->
+  <PropertyGroup Condition="'$(Portable)' == 'true'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- MIT requires the notices to travel with the bundled Whisper.net, whisper.cpp and NAudio binaries. -->
   <ItemGroup Condition="'$(Portable)' == 'true'">
-    <None Include="..\..\packaging\README.txt" CopyToPublishDirectory="PreserveNewest" />
-    <!-- MIT requires the notices to travel with the bundled Whisper.net, whisper.cpp and NAudio binaries. -->
     <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\THIRD-PARTY-NOTICES.txt" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Target Name="StripCudaFromPortablePublish" AfterTargets="Publish" Condition="'$(Portable)' == 'true'">
+  <!--
+    The Whisper.net.Runtime.Cuda12 package contributes runtimes/cuda12 regardless of the
+    ItemGroup above, so a portable publish has to drop it from the publish list.
+
+    This edits the list rather than conditioning the PackageReference itself. A conditional
+    PackageReference reads better but alters the NuGet restore graph, making the output depend
+    on whether restore last ran with the same property — a publish that skips restore would
+    silently ship 1.8 GB of CUDA. Removing items after the list is computed cannot be defeated
+    by a stale assets file.
+
+    It runs before bundling, not after Publish: once the single-file bundle is written there
+    is nothing left on disk to delete, and the CUDA runtime would ride inside Murmur.exe.
+  -->
+  <Target Name="ExcludeCudaFromPortablePublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(Portable)' == 'true'">
     <ItemGroup>
-      <PortableCudaLeftovers Include="$(PublishDir)cudart64_12.dll" />
-      <PortableCudaLeftovers Include="$(PublishDir)cublas64_12.dll" />
-      <PortableCudaLeftovers Include="$(PublishDir)cublasLt64_12.dll" />
-      <PortableCudaLeftovers Include="$(PublishDir)runtimes\cuda12\**\*" />
+      <_PortableCudaFiles Include="@(ResolvedFileToPublish)"
+                          Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('/', '\').StartsWith('runtimes\cuda12\'))" />
+      <ResolvedFileToPublish Remove="@(_PortableCudaFiles)" />
     </ItemGroup>
-    <Delete Files="@(PortableCudaLeftovers)" />
-    <RemoveDir Directories="$(PublishDir)runtimes\cuda12" />
-    <Message Importance="high" Text="Portable build: removed the CUDA 12 backend, leaving Vulkan and CPU." />
+    <Message Importance="high" Text="Portable build: left out @(_PortableCudaFiles->Count()) CUDA 12 files, keeping Vulkan and CPU." />
   </Target>
 
 </Project>
