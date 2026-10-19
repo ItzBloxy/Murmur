@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Murmur.App/Murmur.App.csproj" />
+    <Project Path="src/Murmur.Core/Murmur.Core.csproj" />
+    <Project Path="src/Murmur.Platform/Murmur.Platform.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Murmur.Core.Tests/Murmur.Core.Tests.csproj" />
+    <Project Path="tests/Murmur.Integration.Tests/Murmur.Integration.Tests.csproj" />
+  </Folder>
+</Solution>

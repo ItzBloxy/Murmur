@@ -1,0 +1,65 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Murmur.Core\Murmur.Core.csproj" />
+    <ProjectReference Include="..\Murmur.Platform\Murmur.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The tray menu's layout is asserted on without exposing it publicly. -->
+    <InternalsVisibleTo Include="Murmur.Integration.Tests" />
+  </ItemGroup>
+
+  <!--
+    NVIDIA's CUDA 12 runtime, bundled so the GPU backend works without a toolkit install.
+    Absent, Whisper.net falls back to Vulkan. See native/README.md.
+
+    Excluded from portable builds: 752 MB that only helps NVIDIA cards which already have a
+    working Vulkan driver. See docs/superpowers/specs/2026-08-01-portable-distribution-design.md.
+  -->
+  <ItemGroup Condition="'$(Portable)' != 'true'">
+    <None Include="..\..\native\cuda12\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Version>1.0.0</Version>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Required by [LibraryImport] source generation for the Win32 P/Invokes. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    The Whisper.net.Runtime.Cuda12 package contributes runtimes/cuda12 regardless of the
+    ItemGroup above, so a portable publish has to remove both carriers.
+
+    This runs after publish rather than conditioning the PackageReference itself. A
+    conditional PackageReference reads better but alters the NuGet restore graph, making the
+    output depend on whether restore last ran with the same property — a publish that skips
+    restore would silently ship 1.8 GB of CUDA. Deleting from the publish directory cannot
+    be defeated by a stale assets file.
+  -->
+  <!-- Ships inside the zip. Packaging, so it has no business in a normal build. -->
+  <ItemGroup Condition="'$(Portable)' == 'true'">
+    <None Include="..\..\packaging\README.txt" CopyToPublishDirectory="PreserveNewest" />
+    <!-- MIT requires the notices to travel with the bundled Whisper.net, whisper.cpp and NAudio binaries. -->
+    <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="StripCudaFromPortablePublish" AfterTargets="Publish" Condition="'$(Portable)' == 'true'">
+    <ItemGroup>
+      <PortableCudaLeftovers Include="$(PublishDir)cudart64_12.dll" />
+      <PortableCudaLeftovers Include="$(PublishDir)cublas64_12.dll" />
+      <PortableCudaLeftovers Include="$(PublishDir)cublasLt64_12.dll" />
+      <PortableCudaLeftovers Include="$(PublishDir)runtimes\cuda12\**\*" />
+    </ItemGroup>
+    <Delete Files="@(PortableCudaLeftovers)" />
+    <RemoveDir Directories="$(PublishDir)runtimes\cuda12" />
+    <Message Importance="high" Text="Portable build: removed the CUDA 12 backend, leaving Vulkan and CPU." />
+  </Target>
+
+</Project>
