@@ -45,6 +45,9 @@
   <!-- Ships inside the zip. Packaging, so it has no business in a normal build. -->
   <ItemGroup Condition="'$(Portable)' == 'true'">
     <None Include="..\..\packaging\README.txt" CopyToPublishDirectory="PreserveNewest" />
+    <!-- MIT requires the notices to travel with the bundled Whisper.net, whisper.cpp and NAudio binaries. -->
+    <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="StripCudaFromPortablePublish" AfterTargets="Publish" Condition="'$(Portable)' == 'true'">

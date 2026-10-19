@@ -1,0 +1,73 @@
+Murmur - third-party notices
+============================
+
+Murmur itself is MIT licensed (see LICENSE). It is built on the work below.
+
+
+BUNDLED IN THE RELEASE ZIP
+--------------------------
+
+Whisper.net 1.9.1 (and its Runtime / Runtime.Vulkan packages)
+  https://github.com/sandrohanea/whisper.net
+  MIT License, Copyright (c) 2024 sandrohanea
+
+whisper.cpp and ggml (native libraries shipped inside Whisper.net.Runtime)
+  https://github.com/ggml-org/whisper.cpp
+  MIT License, Copyright (c) 2023-2024 The ggml authors
+
+NAudio 2.3.0
+  https://github.com/naudio/NAudio
+  MIT License, Copyright (c) Mark Heath
+
+.NET runtime and Windows Desktop runtime (self-contained build)
+  https://github.com/dotnet/runtime
+  MIT License, Copyright (c) .NET Foundation and Contributors
+
+
+DOWNLOADED ON FIRST USE, NOT BUNDLED
+------------------------------------
+
+Whisper large-v3-turbo, GGML q8_0 conversion
+  https://github.com/openai/whisper
+  https://huggingface.co/ggerganov/whisper.cpp
+  MIT License, Copyright (c) 2022 OpenAI
+
+Silero VAD v6.2.0, GGML conversion
+  https://github.com/snakers4/silero-vad
+  MIT License, Copyright (c) 2020-present Silero Team
+
+Whistle speech model and the needle engine, by Cactus Compute
+  https://huggingface.co/Cactus-Compute/whistle
+  https://github.com/cactus-compute/needle
+  Apache License 2.0
+
+
+MIT LICENSE TEXT (applies to every MIT component above)
+-------------------------------------------------------
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+APACHE LICENSE 2.0 (Whistle and needle)
+---------------------------------------
+
+The full text is at https://www.apache.org/licenses/LICENSE-2.0 and in the
+LICENSE files of the repositories linked above. Murmur does not redistribute
+Whistle or needle; it downloads them from Cactus Compute's Hugging Face
+repositories at pinned revisions and verifies their SHA-256 hashes.

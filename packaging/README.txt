@@ -102,6 +102,15 @@ To remove Murmur completely: untick "Start with Windows" if you enabled it,
 quit, then delete this folder and %LOCALAPPDATA%\Murmur.
 
 
+LICENSE
+-------
+
+Murmur is open source under the MIT license - see LICENSE.txt. The libraries
+and models it builds on are listed in THIRD-PARTY-NOTICES.txt.
+
+Source, issues and new releases: https://github.com/ItzBloxy/Murmur
+
+
 IF SOMETHING IS WRONG
 ---------------------
 
