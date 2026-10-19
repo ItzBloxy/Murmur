@@ -30,13 +30,13 @@ Local speech-to-text for Windows. No account, no cloud, no audio leaves your PC.
 - **Fast.** On a mid-range graphics card, 12 seconds of speech comes back in about a quarter of a second.
 - **Eight languages, two models.** English and Danish use OpenAI's Whisper. German, French, Spanish, Italian, Dutch and Polish use Whistle, a 17 MB model that runs on the CPU.
 - **Careful by design.** It won't type into a window you switched to mid-dictation (the text goes to your clipboard instead), and it doesn't invent "Thanks for watching!" when you said nothing.
-- **Portable.** Unzip and run. Nothing to install, and no admin rights needed.
+- **One file.** Download `Murmur.exe` and run it. Nothing to install or unzip, and no admin rights needed.
 
 ## Quick start
 
-1. Download **`Murmur-portable.zip`** from the [latest release](https://github.com/ItzBloxy/Murmur/releases/latest) and unzip it anywhere.
-2. Run **`Murmur.App.exe`**.
-3. The first launch downloads the Whisper model (about 870 MB). Progress shows in the tray icon's tooltip, and this happens only once.
+1. Download **`Murmur.exe`** from the [latest release](https://github.com/ItzBloxy/Murmur/releases/latest) and put it wherever you like.
+2. Run it.
+3. The first launch unpacks the app's runtime (a couple of seconds), then downloads the Whisper model (about 870 MB). Progress shows in the tray icon's tooltip, and this happens only once.
 4. Click into any text field, **hold Right Ctrl**, speak, and let go.
 
 > [!NOTE]
@@ -123,6 +123,9 @@ Everything runs locally. Murmur uses the network only for the one-time model dow
 | `%LOCALAPPDATA%\Murmur\settings.json` | Your settings |
 | `%LOCALAPPDATA%\Murmur\murmur.log` | Diagnostic log |
 | `%LOCALAPPDATA%\Murmur\models\` | Downloaded models and the Whistle engine |
+| `%TEMP%\.net\Murmur\` | The runtime `Murmur.exe` unpacks on first launch; safe to delete, it's recreated |
+
+To remove Murmur completely, turn off *Start with Windows*, quit, and delete `Murmur.exe` and the folders above.
 
 <details>
 <summary><b>Settings reference</b></summary>
@@ -174,14 +177,13 @@ dotnet test --project tests/Murmur.Integration.Tests   # real models, GPU, audio
 
 Integration tests tagged `Integration` download the real models, and tests tagged `UI` create real windows. Exclude them with `--filter-not-trait "Category=Integration" --filter-not-trait "Category=UI"`. The recorded-speech accuracy tests skip until you add your own clips; see [the fixtures README](tests/Murmur.Integration.Tests/fixtures/README.md).
 
-Build the portable release zip:
+Build the release exe:
 
 ```powershell
 dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Portable=true -o dist/Murmur
-Compress-Archive -Path dist/Murmur/* -DestinationPath dist/Murmur-portable.zip -Force
 ```
 
-`-p:Portable=true` leaves out the 752 MB CUDA runtime and relies on Vulkan, which every current GPU driver provides. See [`native/README.md`](native/README.md) to enable CUDA for local builds.
+That produces a single `dist/Murmur/Murmur.exe` of about 87 MB. `-p:Portable=true` bundles everything into one compressed file. It also leaves out the 752 MB CUDA runtime and relies on Vulkan, which every current GPU driver provides. On first launch the exe unpacks itself to `%TEMP%\.net\Murmur`. See [`native/README.md`](native/README.md) to enable CUDA for local builds.
 
 ### Project layout
 

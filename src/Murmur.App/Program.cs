@@ -84,6 +84,11 @@ internal sealed class MurmurContext : ApplicationContext
 
         _audio.LogDeviceInventory();
 
+        if (_settings.StartWithWindows && _startup.RepairIfMoved(Application.ExecutablePath))
+        {
+            _log.Write("startup", $"autostart pointed at a missing file — re-pointed at {Application.ExecutablePath}");
+        }
+
         var store = new ModelStore(Path.Combine(_dataDirectory, "models"));
         _engine = new WhisperEngine(store, _settings.Device, _log);
         _whistle = new WhistleEngine(store, _log);

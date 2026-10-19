@@ -6,4 +6,12 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <!--
+    The portable release is a single exe, so symbols go inside each assembly rather than
+    beside it as .pdb files. Stack traces in the diagnostic log keep their line numbers.
+  -->
+  <PropertyGroup Condition="'$(Portable)' == 'true'">
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
 </Project>

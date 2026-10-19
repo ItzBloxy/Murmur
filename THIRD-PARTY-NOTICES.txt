@@ -4,8 +4,8 @@ Murmur - third-party notices
 Murmur itself is MIT licensed (see LICENSE). It is built on the work below.
 
 
-BUNDLED IN THE RELEASE ZIP
---------------------------
+BUNDLED IN MURMUR.EXE
+---------------------
 
 Whisper.net 1.9.1 (and its Runtime / Runtime.Vulkan packages)
   https://github.com/sandrohanea/whisper.net

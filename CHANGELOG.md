@@ -18,6 +18,6 @@ The first public release.
 - Silence handling: a voice-activity gate and an artifact filter stop Whisper's invented subtitle credits.
 - Preload, Release GPU and an automatic idle unload after 5 minutes.
 - Start with Windows, a rebindable hotkey and a diagnostic log.
-- A portable build: unzip and run, nothing to install.
+- A single portable `Murmur.exe`: nothing to install or unzip. If the exe is moved, *Start with Windows* follows it.
 
 [1.0.0]: https://github.com/ItzBloxy/Murmur/releases/tag/v1.0.0

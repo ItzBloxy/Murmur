@@ -288,3 +288,28 @@ the `backend=` line identifies it immediately — which is the reason that line 
 - The portable build is measurably slower than the development build — 0.25s versus 0.17s
   on 12 seconds of audio. Imperceptible in use, and the correct trade for 1.8 GB and
   broader hardware support.
+
+## 10. Addendum, 2026-10-19: one exe instead of a zip
+
+For the public 1.0.0 release, `-p:Portable=true` now produces a single compressed
+`Murmur.exe` (86.6 MB) instead of a 307-file folder for zipping. The assembly is renamed from
+`Murmur.App` to `Murmur` so that the downloaded file carries the product's name.
+
+- **`IncludeAllContentForSelfExtract`**, because the Whisper.net runtimes are content items
+  targeted at `runtimes/<backend>/win-x64`, not NuGet native assets. Only this flag bundles
+  them, and extracting everything to `%TEMP%\.net\Murmur` on first launch keeps the folder
+  layout Whisper.net's loader probes. Measured: 1.5 s to first-ready including extraction,
+  0.6 s afterwards, and `backend=Vulkan` on model load.
+- **CUDA is removed from `ResolvedFileToPublish`** after `ComputeResolvedFilesToPublishList`,
+  replacing §5's post-publish delete. Once the bundle is written there is nothing on disk to
+  delete, and the first single-file attempt came out at 564 MB with CUDA inside it. The
+  reasoning against a conditional `PackageReference` is unchanged.
+- **`packaging/README.txt` is gone.** Nothing can sit beside a single exe, and the GitHub
+  README and release notes carry its content. `LICENSE.txt` and `THIRD-PARTY-NOTICES.txt`
+  are still bundled, so the MIT notices travel inside the binary.
+- **Symbols are embedded** (`DebugType=embedded` when portable), so no `.pdb` files sit
+  beside the exe and logged stack traces keep their line numbers.
+- **Autostart follows the exe.** A single file gets downloaded and then moved, so at startup
+  a Run-key entry pointing at a missing file is re-pointed at the running copy. One that
+  still resolves is left alone, so a dev build cannot take autostart away from the installed
+  copy.
