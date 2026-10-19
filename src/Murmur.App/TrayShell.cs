@@ -20,8 +20,8 @@ public sealed class TrayShell : INotifier, IDisposable
 
     private readonly NotifyIcon _icon = new();
     private readonly ToolStripMenuItem _status = new() { Enabled = false };
-    private readonly ToolStripMenuItem _danish = new("Danish");
-    private readonly ToolStripMenuItem _english = new("English");
+    private readonly ToolStripMenuItem _language = new("Language");
+    private readonly Dictionary<string, ToolStripMenuItem> _languages = new(StringComparer.OrdinalIgnoreCase);
     private readonly ToolStripMenuItem _insertOnStop = new("When I stop  (best accuracy)");
     private readonly ToolStripMenuItem _insertAsYouSpeak = new("As I speak  (each phrase)");
     private readonly ToolStripMenuItem _hotkey = new();
@@ -35,8 +35,7 @@ public sealed class TrayShell : INotifier, IDisposable
         // Forces handle creation on the UI thread so InvokeRequired reports correctly.
         _marshaller.CreateControl();
 
-        var language = new ToolStripMenuItem("Language");
-        language.DropDownItems.AddRange([_danish, _english]);
+        BuildLanguageMenu();
 
         var insertMode = new ToolStripMenuItem("Insert text");
         insertMode.DropDownItems.AddRange([_insertOnStop, _insertAsYouSpeak]);
@@ -46,7 +45,7 @@ public sealed class TrayShell : INotifier, IDisposable
         [
             _status,
             new ToolStripSeparator(),
-            language,
+            _language,
             insertMode,
             new ToolStripSeparator(),
             _hotkey,
@@ -60,8 +59,6 @@ public sealed class TrayShell : INotifier, IDisposable
             new ToolStripMenuItem("Quit", null, (_, _) => QuitRequested?.Invoke()),
         ]);
 
-        _danish.Click += (_, _) => LanguageChanged?.Invoke("da");
-        _english.Click += (_, _) => LanguageChanged?.Invoke("en");
         _insertOnStop.Click += (_, _) => InsertModeChanged?.Invoke("onStop");
         _insertAsYouSpeak.Click += (_, _) => InsertModeChanged?.Invoke("asYouSpeak");
         _hotkey.Click += (_, _) => HotkeyChangeRequested?.Invoke();
@@ -85,10 +82,38 @@ public sealed class TrayShell : INotifier, IDisposable
     public event Action? OpenLogRequested;
     public event Action? QuitRequested;
 
+    /// <summary>The Language submenu's items, headers and separators included. Tests read the layout from here.</summary>
+    internal IReadOnlyList<ToolStripItem> LanguageMenuItems => _language.DropDownItems.Cast<ToolStripItem>().ToList();
+
+    /// <summary>
+    /// One section per model: a header that cannot be chosen, then its languages. Picking a
+    /// language is what picks the model, so the headers only explain which one will run.
+    /// </summary>
+    private void BuildLanguageMenu()
+    {
+        foreach (var group in SpeechLanguages.All.GroupBy(l => l.Model))
+        {
+            if (_language.DropDownItems.Count > 0) _language.DropDownItems.Add(new ToolStripSeparator());
+
+            _language.DropDownItems.Add(new ToolStripMenuItem(group.Key.ToString()) { Enabled = false });
+
+            foreach (var language in group)
+            {
+                var item = new ToolStripMenuItem(language.DisplayName);
+                item.Click += (_, _) => LanguageChanged?.Invoke(language.Code);
+                _languages[language.Code] = item;
+                _language.DropDownItems.Add(item);
+            }
+        }
+    }
+
     public void ApplySettings(Settings settings)
     {
-        _danish.Checked = settings.Language == "da";
-        _english.Checked = settings.Language == "en";
+        foreach (var (code, item) in _languages)
+        {
+            item.Checked = code.Equals(settings.Language, StringComparison.OrdinalIgnoreCase);
+        }
+
         _insertAsYouSpeak.Checked = settings.InsertMode == "asYouSpeak";
         _insertOnStop.Checked = !_insertAsYouSpeak.Checked;
         _hotkey.Text = $"Hotkey…  ({settings.Hotkey})";

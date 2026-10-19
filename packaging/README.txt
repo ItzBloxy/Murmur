@@ -28,6 +28,9 @@ RUNNING IT
    in the tray icon's tooltip. The hotkey will say "still downloading" until
    it finishes. This happens once.
 
+   Choosing German, French, Spanish, Italian, Dutch or Polish for the first
+   time downloads a second, much smaller model, Whistle, about 18 MB.
+
 5. A microphone icon appears in your system tray. That is the whole app.
 
 
@@ -42,8 +45,14 @@ showing what it has heard so far. Your text is inserted when you stop.
 
 Right-click the tray icon for:
 
-  Language              Danish or English. DEFAULTS TO DANISH - change it
-                        here if you speak English.
+  Language              Grouped by the model that runs it:
+                          Whisper - English, Danish
+                          Whistle - German, French, Spanish, Italian,
+                                    Dutch, Polish
+                        Picking a language picks its model. DEFAULTS TO
+                        DANISH - change it here if you speak another.
+                        Whistle is small and runs on the processor, so it
+                        uses no graphics memory at all.
   Insert text           "When I stop" gives the best accuracy. "As I speak"
                         types each phrase as you pause, but the model sees
                         less context so punctuation is rougher.
@@ -75,8 +84,9 @@ PRIVACY
 
 Everything is local. Your voice never leaves the machine.
 
-The speech model runs on your own hardware. The only time Murmur uses the
-network at all is the one-time model download on first launch. There is no
+The speech models run on your own hardware. The only times Murmur uses the
+network at all are the one-time model downloads: Whisper on first launch,
+and Whistle the first time you choose one of its languages. There is no
 account, no telemetry, and no audio is stored - it is held in memory during
 a dictation and discarded afterwards.
 
@@ -86,7 +96,7 @@ WHERE IT KEEPS THINGS
 
   %LOCALAPPDATA%\Murmur\settings.json   your settings
   %LOCALAPPDATA%\Murmur\murmur.log      diagnostic log
-  %LOCALAPPDATA%\Murmur\models\         the downloaded speech model
+  %LOCALAPPDATA%\Murmur\models\         the downloaded speech models
 
 To remove Murmur completely: untick "Start with Windows" if you enabled it,
 quit, then delete this folder and %LOCALAPPDATA%\Murmur.

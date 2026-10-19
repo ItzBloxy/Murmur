@@ -3,7 +3,10 @@ namespace Murmur.Core;
 /// <summary>Persisted user configuration. Defaults match the spec.</summary>
 public sealed record Settings
 {
-    /// <summary>Whisper language code: "da" or "en".</summary>
+    /// <summary>
+    /// A code from <see cref="SpeechLanguages"/>: "en" or "da" run on Whisper; "de", "fr",
+    /// "es", "it", "nl" or "pl" run on Whistle. The language decides the model.
+    /// </summary>
     public string Language { get; init; } = "da";
 
     /// <summary>Name of a <c>System.Windows.Forms.Keys</c> value, e.g. "RControlKey".</summary>

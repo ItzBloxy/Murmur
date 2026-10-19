@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Murmur.Platform;
 
 namespace Murmur.Integration.Tests;
@@ -98,6 +99,41 @@ public sealed class ModelStoreTests : IDisposable
         // Progress is reported asynchronously; give the synchronization context a chance.
         await Task.Delay(50, Ct);
         Assert.NotEmpty(reports);
+    }
+
+    [Fact]
+    public async Task A_download_matching_its_expected_hash_is_kept()
+    {
+        var store = new ModelStore(_dir);
+        var payload = new byte[4096];
+        Random.Shared.NextBytes(payload);
+        var hash = Convert.ToHexStringLower(SHA256.HashData(payload));
+
+        var result = await store.EnsureAsync(
+            "engine.exe",
+            _ => Task.FromResult<Stream>(new MemoryStream(payload)),
+            expectedSha256: hash,
+            progress: null,
+            Ct);
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(result, Ct));
+    }
+
+    /// <summary>One of the downloads is an executable. A mismatch must never reach the final path.</summary>
+    [Fact]
+    public async Task A_download_with_the_wrong_hash_is_discarded()
+    {
+        var store = new ModelStore(_dir);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.EnsureAsync(
+            "engine.exe",
+            _ => Task.FromResult<Stream>(new MemoryStream(new byte[4096])),
+            expectedSha256: new string('0', 64),
+            progress: null,
+            Ct));
+
+        Assert.False(File.Exists(Path.Combine(_dir, "engine.exe")));
+        Assert.False(File.Exists(Path.Combine(_dir, "engine.exe.partial")));
     }
 
     [Fact]

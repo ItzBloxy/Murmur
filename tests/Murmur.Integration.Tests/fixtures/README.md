@@ -21,6 +21,13 @@ technical vocabulary Whisper most often gets wrong:
 | `danish.wav` | Jeg sender rapporten til Anna inden fredag klokken tolv. |
 | `english.wav` | Deploy the staging branch and check the Kubernetes logs afterwards. |
 
+Optionally, a third for Whistle, which unskips
+`WhistleEngineTests.Transcribes_german_within_the_word_error_tolerance`:
+
+| File | Say |
+|---|---|
+| `german.wav` | Bitte schick den Bericht bis Freitag an das Finanzteam in München. |
+
 Then write **exactly what you actually said** into the matching `.txt` file — `danish.txt`
 and `english.txt`. That text is the word-error-rate reference. If you improvise different
 words, the `.txt` must match the improvisation, not the table above.

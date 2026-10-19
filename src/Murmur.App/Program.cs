@@ -41,6 +41,8 @@ internal sealed class MurmurContext : ApplicationContext
     private readonly TrayShell _tray = new();
     private readonly OverlayWindow _overlay = new();
     private readonly WhisperEngine _engine;
+    private readonly WhistleEngine _whistle;
+    private readonly LanguageRoutedEngine _router;
     private readonly WasapiAudioCapture _audio;
     private readonly LowLevelHotkeySource _hotkeys;
     private readonly Win32TextInjector _injector;
@@ -71,6 +73,7 @@ internal sealed class MurmurContext : ApplicationContext
             ("data directory", _dataDirectory),
             ("hotkey", _settings.Hotkey),
             ("language", _settings.Language),
+            ("speech model", SpeechLanguages.ModelFor(_settings.Language).ToString()),
             ("insert mode", _settings.InsertMode),
             ("device", _settings.Device),
             ("hold threshold", $"{_settings.HoldThresholdMs} ms"),
@@ -83,6 +86,8 @@ internal sealed class MurmurContext : ApplicationContext
 
         var store = new ModelStore(Path.Combine(_dataDirectory, "models"));
         _engine = new WhisperEngine(store, _settings.Device, _log);
+        _whistle = new WhistleEngine(store, _log);
+        _router = new LanguageRoutedEngine(_engine, _whistle, () => _settings.Language, _log);
 
         WireTray();
         WireHotkeys();
@@ -126,12 +131,17 @@ internal sealed class MurmurContext : ApplicationContext
 
             _segmenter = new SileroVoiceSegmenter(_engine.VadModelPath, _settings.VadSilenceMs);
             _controller = new DictationController(
-                _audio, _segmenter, _engine, _injector, _overlay, _tray, () => _settings,
+                _audio, _segmenter, _router, _injector, _overlay, _tray, () => _settings,
                 TimeProvider.System, _log);
 
             _modelsReady = true;
             _log.Write("startup", $"models ready — whisper and VAD loaded from {Path.Combine(_dataDirectory, "models")}");
-            _tray.SetState(DictationState.Idle, _engine.IsLoaded, _engine.IsPinned);
+
+            // Read the language now, not before the download: it may have been changed from
+            // the menu meanwhile, and the switch handler leaves that case to startup.
+            if (_router.ActiveModel == SpeechModel.Whistle && !await TryPrepareWhistleAsync()) return;
+
+            _tray.SetState(DictationState.Idle, _router.IsLoaded, _router.IsPinned);
             _tray.Notify("Murmur", $"Ready. Press {_settings.Hotkey} to dictate.");
         }
         catch (Exception ex)
@@ -141,9 +151,69 @@ internal sealed class MurmurContext : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Releases the model being left straight away rather than at the next dictation, and
+    /// fetches Whistle the first time one of its languages is chosen.
+    /// </summary>
+    private async Task SwitchModelAsync()
+    {
+        // Startup prepares whichever model the language needs once it gets that far.
+        if (!_modelsReady || _controller is not { } controller) return;
+
+        if (_router.ActiveModel == SpeechModel.Whistle)
+        {
+            var downloading = _whistle.NeedsDownload;
+            if (!await TryPrepareWhistleAsync()) return;
+            if (downloading) _tray.Notify("Murmur", $"Whistle is ready. Press {_settings.Hotkey} to dictate.");
+        }
+
+        try
+        {
+            await _router.SwitchToCurrentLanguageAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.Write("error", $"model switch failed: {ex}");
+            _tray.Notify("Murmur", $"Could not switch models: {ex.Message}");
+        }
+
+        _tray.SetState(controller.State, _router.IsLoaded, _router.IsPinned);
+    }
+
+    /// <summary>
+    /// Downloads Whistle if it is not cached. A failure is reported but not fatal: Whisper
+    /// is unaffected, and the next Whistle dictation retries the download by itself.
+    /// </summary>
+    private async Task<bool> TryPrepareWhistleAsync()
+    {
+        if (!_whistle.NeedsDownload) return true;
+
+        try
+        {
+            _tray.Notify("Murmur",
+                $"Downloading the Whistle model (about {WhistleEngine.DownloadMegabytes} MB). This happens once.");
+
+            await _whistle.EnsureDownloadedAsync(progress: null, CancellationToken.None);
+
+            _log.Write("startup", "whistle engine and model downloaded");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Write("error", $"whistle download failed: {ex}");
+            _tray.Notify("Murmur", $"The Whistle download failed: {ex.Message}. It will retry when you dictate.");
+            return false;
+        }
+    }
+
     private void WireTray()
     {
-        _tray.LanguageChanged += code => UpdateSettings(_settings with { Language = code });
+        _tray.LanguageChanged += code =>
+        {
+            UpdateSettings(_settings with { Language = code });
+            _ = SwitchModelAsync();
+        };
+
         _tray.InsertModeChanged += mode => UpdateSettings(_settings with { InsertMode = mode });
 
         _tray.HotkeyChangeRequested += () =>

@@ -5,6 +5,11 @@
     <ProjectReference Include="..\Murmur.Platform\Murmur.Platform.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The tray menu's layout is asserted on without exposing it publicly. -->
+    <InternalsVisibleTo Include="Murmur.Integration.Tests" />
+  </ItemGroup>
+
   <!--
     NVIDIA's CUDA 12 runtime, bundled so the GPU backend works without a toolkit install.
     Absent, Whisper.net falls back to Vulkan. See native/README.md.
