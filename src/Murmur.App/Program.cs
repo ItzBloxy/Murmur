@@ -7,13 +7,19 @@ using Murmur.Platform;
 
 namespace Murmur.App;
 
-internal static class Program
+internal static partial class Program
 {
     private const string MutexName = "Murmur.SingleInstance.9F2C1A7B";
 
     [STAThread]
     private static void Main()
     {
+        // The single-file release unpacks to %TEMP%\.net\..., but Windows resolves a native
+        // DLL's own dependencies from the exe's folder. Without this, the CUDA backend cannot
+        // find cudart64_12.dll and cublas64_12.dll beside it, and Whisper.net silently falls
+        // back to Vulkan. In a folder build the two directories are the same, so it is a no-op.
+        SetDllDirectory(AppContext.BaseDirectory);
+
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out var isFirstInstance);
         if (!isFirstInstance)
         {
@@ -25,6 +31,11 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.Run(new MurmurContext());
     }
+
+    [System.Runtime.InteropServices.LibraryImport("kernel32.dll", EntryPoint = "SetDllDirectoryW",
+        StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static partial bool SetDllDirectory(string path);
 }
 
 /// <summary>

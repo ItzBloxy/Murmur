@@ -14,10 +14,17 @@
     NVIDIA's CUDA 12 runtime, bundled so the GPU backend works without a toolkit install.
     Absent, Whisper.net falls back to Vulkan. See native/README.md.
 
-    Excluded from portable builds: 752 MB that only helps NVIDIA cards which already have a
-    working Vulkan driver. See docs/superpowers/specs/2026-08-01-portable-distribution-design.md.
+    Excluded from the default portable build: 752 MB that only helps NVIDIA cards which
+    already have a working Vulkan driver. The CUDA edition (-p:Edition=Cuda) keeps it, for
+    the ~80 ms per dictation it saves on those cards.
+    See docs/superpowers/specs/2026-08-01-portable-distribution-design.md.
   -->
-  <ItemGroup Condition="'$(Portable)' != 'true'">
+  <PropertyGroup>
+    <IncludeCuda>false</IncludeCuda>
+    <IncludeCuda Condition="'$(Portable)' != 'true' or '$(Edition)' == 'Cuda'">true</IncludeCuda>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IncludeCuda)' == 'true'">
     <None Include="..\..\native\cuda12\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
@@ -25,7 +32,7 @@
     <OutputType>WinExe</OutputType>
     <!-- The file people download and run is Murmur.exe; the project keeps its folder name. -->
     <AssemblyName>Murmur</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
@@ -68,13 +75,51 @@
     It runs before bundling, not after Publish: once the single-file bundle is written there
     is nothing left on disk to delete, and the CUDA runtime would ride inside Murmur.exe.
   -->
-  <Target Name="ExcludeCudaFromPortablePublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(Portable)' == 'true'">
+  <Target Name="ExcludeCudaFromPortablePublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(IncludeCuda)' != 'true'">
     <ItemGroup>
       <_PortableCudaFiles Include="@(ResolvedFileToPublish)"
                           Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('/', '\').StartsWith('runtimes\cuda12\'))" />
       <ResolvedFileToPublish Remove="@(_PortableCudaFiles)" />
     </ItemGroup>
     <Message Importance="high" Text="Portable build: left out @(_PortableCudaFiles->Count()) CUDA 12 files, keeping Vulkan and CPU." />
+  </Target>
+
+  <!--
+    The Whisper.net runtime packages ship their Linux, win-x86 and win-arm64 builds as content
+    items, so publishing for win-x64 does not filter them out — 600 MB in the CUDA edition,
+    541 MB of it a Linux CUDA library. A win-x64 exe can never load any of them.
+  -->
+  <Target Name="ExcludeOtherPlatformsFromPortablePublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(Portable)' == 'true'">
+    <ItemGroup>
+      <_ForeignRuntimeFiles Include="@(ResolvedFileToPublish)"
+                            Condition="$([System.String]::Copy('\%(ResolvedFileToPublish.RelativePath)').Replace('/', '\').StartsWith('\runtimes\')) and ($([System.String]::Copy('\%(ResolvedFileToPublish.RelativePath)').Replace('/', '\').Contains('\linux-')) or $([System.String]::Copy('\%(ResolvedFileToPublish.RelativePath)').Replace('/', '\').Contains('\win-x86\')) or $([System.String]::Copy('\%(ResolvedFileToPublish.RelativePath)').Replace('/', '\').Contains('\win-arm64\')))" />
+      <ResolvedFileToPublish Remove="@(_ForeignRuntimeFiles)" />
+    </ItemGroup>
+    <Message Importance="high" Text="Portable build: left out @(_ForeignRuntimeFiles->Count()) runtime files for other platforms." />
+  </Target>
+
+  <!--
+    A CUDA edition without NVIDIA's runtime would quietly fall back to Vulkan and be the
+    Vulkan edition under a misleading name, so a missing DLL stops the build instead.
+  -->
+  <Target Name="RequireCudaRuntimeForCudaEdition" BeforeTargets="PrepareForPublish" Condition="'$(Portable)' == 'true' and '$(Edition)' == 'Cuda'">
+    <Error Condition="!Exists('..\..\native\cuda12\%(CudaRuntimeFile.Identity)')"
+           Text="The CUDA edition needs native\cuda12\%(CudaRuntimeFile.Identity). Run native\fetch-cuda.ps1 to download NVIDIA's verified copies." />
+  </Target>
+
+  <ItemGroup>
+    <CudaRuntimeFile Include="cudart64_12.dll;cublas64_12.dll;cublasLt64_12.dll;NVIDIA-LICENSE.txt" />
+  </ItemGroup>
+
+  <!-- NVIDIA's own license travels with NVIDIA's files; Murmur's MIT license does not cover them. -->
+  <ItemGroup Condition="'$(Portable)' == 'true' and '$(Edition)' == 'Cuda'">
+    <None Include="..\..\native\cuda12\NVIDIA-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The download says which edition it is. A renamed single-file exe runs unchanged. -->
+  <Target Name="NameCudaEditionExe" AfterTargets="Publish" Condition="'$(Portable)' == 'true' and '$(Edition)' == 'Cuda'">
+    <Move SourceFiles="$(PublishDir)$(AssemblyName).exe" DestinationFiles="$(PublishDir)$(AssemblyName)-CUDA.exe" />
+    <Message Importance="high" Text="CUDA edition: $(PublishDir)$(AssemblyName)-CUDA.exe (CUDA 12, Vulkan and CPU backends)." />
   </Target>
 
 </Project>
