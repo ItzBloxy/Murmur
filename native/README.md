@@ -33,8 +33,37 @@ only the NVIDIA display driver. You lose about 80 ms per dictation. The startup 
 `%LOCALAPPDATA%\Murmur\murmur.log` reports which backend actually loaded — trust that over
 the `device` setting, which only states a preference.
 
-## Restoring them
+## Fetching them
 
-Any CUDA 12.x install has them. Either install the CUDA Toolkit (>= 12.4.1) and copy from
-`bin/`, or take them from another application that bundles a CUDA 12 runtime. They must
-match the major version the package expects — `_12`, not `_13`.
+```powershell
+./native/fetch-cuda.ps1
+```
+
+The script downloads NVIDIA's official CUDA 12.8.1 redistributable archives from
+`developer.download.nvidia.com/compute/cuda/redist`, checks each against the SHA-256 in
+NVIDIA's `redistrib_12.8.1.json`, and extracts the three DLLs plus NVIDIA's license
+(`NVIDIA-LICENSE.txt`) into `cuda12/`. Archives already downloaded with the right hash are
+reused.
+
+| file | version | sha256 (DLL) |
+|---|---|---|
+| `cudart64_12.dll` | CUDA Runtime 12.8.90 | `c2c9a9c22a9bcba9…` |
+| `cublas64_12.dll` | CUDA BLAS 12.8.4.1 | `9513540e4ec4c51e…` |
+| `cublasLt64_12.dll` | CUDA BLAS 12.8.4.1 | `b199d1ff892a81b7…` |
+
+NVIDIA does not Authenticode-sign these files in its redistributable archives, so the
+archive hashes are the provenance check. The copies this folder held before the script
+existed turned out byte-identical to NVIDIA's.
+
+## The CUDA edition
+
+`dotnet publish ... -p:Portable=true -p:Edition=Cuda` bundles these files into
+`Murmur-CUDA.exe`, and the build fails if any of them is missing rather than quietly
+producing a Vulkan build under a CUDA name. Redistribution is permitted by the CUDA Toolkit
+EULA, Attachment A ("CUDA Runtime" and "CUDA BLAS Library"); NVIDIA's license travels inside
+the exe and `THIRD-PARTY-NOTICES.txt` says the files are NVIDIA's, not MIT.
+
+In the single-file exe these DLLs are unpacked to `%TEMP%\.net\Murmur-CUDA\…`, but Windows
+looks for `ggml-cuda-whisper.dll`'s dependencies beside the *exe*. `Program.Main` therefore
+calls `SetDllDirectory(AppContext.BaseDirectory)`; without it the CUDA backend fails to load
+and Whisper.net silently uses Vulkan.

@@ -4,8 +4,8 @@ Murmur - third-party notices
 Murmur itself is MIT licensed (see LICENSE). It is built on the work below.
 
 
-BUNDLED IN MURMUR.EXE
----------------------
+BUNDLED IN BOTH EDITIONS (MURMUR.EXE AND MURMUR-CUDA.EXE)
+--------------------------------------------------------
 
 Whisper.net 1.9.1 (and its Runtime / Runtime.Vulkan packages)
   https://github.com/sandrohanea/whisper.net
@@ -22,6 +22,25 @@ NAudio 2.3.0
 .NET runtime and Windows Desktop runtime (self-contained build)
   https://github.com/dotnet/runtime
   MIT License, Copyright (c) .NET Foundation and Contributors
+
+
+BUNDLED IN MURMUR-CUDA.EXE ONLY
+-------------------------------
+
+Whisper.net.Runtime.Cuda12 1.9.1 (whisper.cpp's CUDA backend)
+  https://github.com/sandrohanea/whisper.net
+  MIT License, Copyright (c) 2024 sandrohanea
+
+NVIDIA CUDA Runtime 12.8.90 (cudart64_12.dll) and
+NVIDIA CUDA BLAS Library 12.8.4.1 (cublas64_12.dll, cublasLt64_12.dll)
+  Copyright (c) NVIDIA Corporation. All rights reserved.
+  NOT covered by Murmur's MIT license. These files are NVIDIA's, redistributed
+  unmodified under the NVIDIA CUDA Toolkit End User License Agreement
+  (https://docs.nvidia.com/cuda/eula/), Attachment A ("CUDA Runtime" and
+  "CUDA BLAS Library"), and may be used only as part of Murmur. NVIDIA's full
+  license text ships inside Murmur-CUDA.exe as NVIDIA-LICENSE.txt. They are
+  taken from NVIDIA's official redistributable archives and checked against
+  NVIDIA's published SHA-256 hashes (see native/fetch-cuda.ps1).
 
 
 DOWNLOADED ON FIRST USE, NOT BUNDLED

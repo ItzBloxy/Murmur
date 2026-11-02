@@ -34,13 +34,22 @@ Local speech-to-text for Windows. No account, no cloud, no audio leaves your PC.
 
 ## Quick start
 
-1. Download **`Murmur.exe`** from the [latest release](https://github.com/ItzBloxy/Murmur/releases/latest) and put it wherever you like.
+1. Download **`Murmur.exe`** from the [latest release](https://github.com/ItzBloxy/Murmur/releases/latest) and put it wherever you like. On an NVIDIA card, you can get **`Murmur-CUDA.exe`** instead (see [Editions](#editions)).
 2. Run it.
 3. The first launch unpacks the app's runtime (a couple of seconds), then downloads the Whisper model (about 870 MB). Progress shows in the tray icon's tooltip, and this happens only once.
 4. Click into any text field, **hold Right Ctrl**, speak, and let go.
 
 > [!NOTE]
 > Windows will probably show **"Windows protected your PC"**. The app isn't code-signed, and it uses a global keyboard hook to notice your hotkey from any application. That's the same Windows API a keylogger uses, so some antivirus tools flag it. Click **More info → Run anyway**. Murmur watches exactly one key, and the [source is right here](src/Murmur.Platform/LowLevelHotkeySource.cs).
+
+## Editions
+
+| Download | Size | GPU backend | Pick it if |
+|---|---|---|---|
+| **`Murmur.exe`** | 68 MB | Vulkan, works on NVIDIA, AMD and Intel | You're not sure. This is the one for most people. |
+| **`Murmur-CUDA.exe`** | 873 MB | CUDA 12, with Vulkan and CPU fallbacks | You have an NVIDIA card and want Whisper to take about a third less time. |
+
+Both editions do the same thing and share settings and models, so you can switch between them freely. The CUDA edition bundles NVIDIA's CUDA runtime, which is why it's so large. On its first launch it unpacks about 1.5 GB to your temp folder, which takes a few seconds once. Whistle languages run on the CPU in both editions.
 
 ## Using it
 
@@ -100,8 +109,8 @@ Measured on the development machine (RTX 3070, Ryzen 7 9800X3D):
 
 | Backend | 12 s of speech |
 |---|---|
-| Whisper on CUDA 12 | 0.17 s |
-| Whisper on Vulkan (the release build's GPU backend) | 0.25 s |
+| Whisper on CUDA 12 (`Murmur-CUDA.exe`) | 0.17 s |
+| Whisper on Vulkan (`Murmur.exe`) | 0.25 s |
 | Whisper on CPU only | ~10 s |
 | Whistle on CPU, including process start and model load | ~0.12 s for a 5 s clip |
 
@@ -123,7 +132,7 @@ Everything runs locally. Murmur uses the network only for the one-time model dow
 | `%LOCALAPPDATA%\Murmur\settings.json` | Your settings |
 | `%LOCALAPPDATA%\Murmur\murmur.log` | Diagnostic log |
 | `%LOCALAPPDATA%\Murmur\models\` | Downloaded models and the Whistle engine |
-| `%TEMP%\.net\Murmur\` | The runtime `Murmur.exe` unpacks on first launch; safe to delete, it's recreated |
+| `%TEMP%\.net\Murmur\`, `%TEMP%\.net\Murmur-CUDA\` | The runtime each edition unpacks on first launch. Each version gets its own subfolder, and old ones aren't removed automatically. Safe to delete; it's recreated. |
 
 To remove Murmur completely, turn off *Start with Windows*, quit, and delete `Murmur.exe` and the folders above.
 
@@ -177,13 +186,18 @@ dotnet test --project tests/Murmur.Integration.Tests   # real models, GPU, audio
 
 Integration tests tagged `Integration` download the real models, and tests tagged `UI` create real windows. Exclude them with `--filter-not-trait "Category=Integration" --filter-not-trait "Category=UI"`. The recorded-speech accuracy tests skip until you add your own clips; see [the fixtures README](tests/Murmur.Integration.Tests/fixtures/README.md).
 
-Build the release exe:
+Build the release exes:
 
 ```powershell
-dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Portable=true -o dist/Murmur
+# Murmur.exe: Vulkan edition, about 68 MB
+dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Portable=true -o dist/vulkan
+
+# Murmur-CUDA.exe: CUDA edition, about 873 MB. First fetch NVIDIA's runtime, hash-verified.
+./native/fetch-cuda.ps1
+dotnet publish src/Murmur.App -c Release -r win-x64 --self-contained true -p:Portable=true -p:Edition=Cuda -o dist/cuda
 ```
 
-That produces a single `dist/Murmur/Murmur.exe` of about 87 MB. `-p:Portable=true` bundles everything into one compressed file. It also leaves out the 752 MB CUDA runtime and relies on Vulkan, which every current GPU driver provides. On first launch the exe unpacks itself to `%TEMP%\.net\Murmur`. See [`native/README.md`](native/README.md) to enable CUDA for local builds.
+`-p:Portable=true` bundles everything into one compressed exe that unpacks itself to `%TEMP%\.net` on first launch, leaving out runtimes for other platforms. The default edition also leaves out the 752 MB CUDA runtime and relies on Vulkan, which every current GPU driver provides. `-p:Edition=Cuda` keeps CUDA, and the build stops if NVIDIA's DLLs are missing. See [`native/README.md`](native/README.md) for CUDA in local builds.
 
 ### Project layout
 

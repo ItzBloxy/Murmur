@@ -313,3 +313,28 @@ For the public 1.0.0 release, `-p:Portable=true` now produces a single compresse
   a Run-key entry pointing at a missing file is re-pointed at the running copy. One that
   still resolves is left alone, so a dev build cannot take autostart away from the installed
   copy.
+
+## 11. Addendum, 2026-11-02: the CUDA edition
+
+1.1.0 publishes two exes: `Murmur.exe` (Vulkan, 67.7 MB) and `Murmur-CUDA.exe` (873 MB),
+built with `-p:Portable=true -p:Edition=Cuda`. On an RTX 3070 the CUDA edition loads
+`backend=Cuda12`; on hardware without CUDA it falls back to Vulkan, then the CPU.
+
+- **NVIDIA's files come from NVIDIA.** `native/fetch-cuda.ps1` downloads the CUDA 12.8.1
+  redistributable archives and checks them against `redistrib_12.8.1.json`. The DLLs are not
+  Authenticode-signed, so that hash is the provenance; the previously hand-copied DLLs were
+  byte-identical. Redistribution rests on the CUDA EULA's Attachment A. NVIDIA's license is
+  bundled, and the notices state that these files are not MIT.
+- **A missing DLL fails the build.** Without it the result would be the Vulkan edition
+  under a CUDA name.
+- **`SetDllDirectory(AppContext.BaseDirectory)` at startup.** The first CUDA build loaded
+  Vulkan. Every file was present in the unpacked folder, but Windows resolves the CUDA
+  backend's imports from the exe's directory, not the unpack folder and not the backend
+  DLL's own directory. Both were tested: copying the NVIDIA DLLs beside `ggml-cuda-whisper.dll`
+  changed nothing, and copying them beside the exe gave `Cuda12`. Pointing the DLL search
+  directory at the unpack folder fixes it, and is a no-op in a folder build.
+- **Foreign runtimes are dropped.** §5's claim that publishing for win-x64 skips the Linux
+  payloads holds for NuGet native assets, not for Whisper.net's runtimes, which arrive as
+  content. Portable builds now remove `linux-*`, `win-x86` and `win-arm64` runtime files:
+  `Murmur.exe` fell from 86.6 to 67.7 MB, and `Murmur-CUDA.exe` from 1,131 to 873 MB.
+- **First launch** unpacks 161 MB (Vulkan, about 1 s) or 1.45 GB (CUDA, about 5 s).
